@@ -1,0 +1,17 @@
+- name: Test NVIDIA Container Toolkit
+  hosts: all
+  gather_facts: false
+  become: true
+
+  tasks:
+    # 1. Run nvidia-smi inside an Ubuntu container with NVIDIA runtime
+    - name: Run nvidia-smi inside an Ubuntu container with NVIDIA runtime
+      command: docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+      register: nvidia_smi_output
+      changed_when: false
+      failed_when: nvidia_smi_output.rc != 0
+
+    # 2. Print the captured output
+    - name: Show nvidia-smi result
+      debug:
+        var: nvidia_smi_output.stdout

@@ -1,0 +1,69 @@
+---
+- name: Securely add NVIDIA Container Toolkit repository
+  hosts: all
+  become: true
+  tasks:
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - gpg
+          - ca-certificates
+        state: present
+        update_cache: yes
+
+    - name: Download and dearmor NVIDIA GPG key
+      shell: |
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+        gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+    - name: Download and rewrite NVIDIA repo list with signed-by
+      shell: |
+        curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      args:
+        creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+      
+    - name: Ensure NVIDIA Container Toolkit is installed
+      apt:
+        name: nvidia-container-toolkit
+        state: present
+
+    - name: Configure NVIDIA runtime for Docker
+      become: true
+      command: nvidia-ctk runtime configure --runtime=docker
+      args:
+        creates: /etc/docker/daemon.json
+
+    - name: Restart Docker to apply NVIDIA runtime config
+      systemd:
+        name: docker
+        state: restarted
+        enabled: true
+
+
+    - name: Start NVIDIA vGPU licensing daemon
+      systemd:
+        name: nvidia-gridd
+        enabled: true
+        state: started
+
+    #Run the container and capture nvidia-smi output
+    - name: Run nvidia-smi inside an Ubuntu container with NVIDIA runtime
+      become: true                        # ← equivalent to the leading “sudo”
+      shell: >
+        docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+      register: nvidia_smi_output
+      changed_when: false                 # treat this as a read-only check
+
+
+       # 2. Print the captured output
+    - name: Show nvidia-smi result
+      debug:
+        var: nvidia_smi_output.stdout

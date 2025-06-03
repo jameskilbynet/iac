@@ -1,0 +1,51 @@
+---
+- name: Install NVIDIA vGPU drivers
+  hosts: all
+  become: yes
+
+  vars:
+    nvidia_driver_file: NVIDIA-Linux-x86_64-535.247.01-grid.run
+    nvidia_driver_path: /tmp/{{ nvidia_driver_file }}
+
+  pre_tasks:
+    - name: Install build tools and headers
+      ansible.builtin.apt:
+        name:
+          - build-essential
+          - dkms
+          - "linux-headers-{{ ansible_kernel }}"
+          - gcc
+          - curl
+          - ca-certificates
+          - make
+          - gnupg
+          - software-properties-common
+        state: present
+        update_cache: yes
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+  tasks:
+    - name: Check if NVIDIA driver is already installed
+      ansible.builtin.command: nvidia-smi
+      register: nvidia_smi_check
+      changed_when: false
+      failed_when: false
+
+    - name: Report existing driver
+      ansible.builtin.debug:
+        msg: "NVIDIA driver is already installed. Skipping installation."
+      when: nvidia_smi_check.rc == 0
+
+    - name: Copy NVIDIA vGPU driver installer
+      ansible.builtin.copy:
+        src: "files/{{ nvidia_driver_file }}"
+        dest: "{{ nvidia_driver_path }}"
+        mode: '0755'
+      when: nvidia_smi_check.rc != 0
+
+    - name: Run NVIDIA vGPU driver installer
+      ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check"
+      args:
+        creates: /usr/bin/nvidia-smi
+      when: nvidia_smi_check.rc != 0

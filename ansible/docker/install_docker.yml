@@ -1,0 +1,82 @@
+---
+- name: Install Docker on supported Ubuntu hosts
+  hosts: all
+  become: yes
+  vars:
+    docker_gpg_path: /etc/apt/keyrings/docker.gpg
+    docker_repo: "deb [arch=amd64 signed-by={{ docker_gpg_path }}] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+
+  tasks:
+    - name: Ensure required system packages are present
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+      
+
+    - name: Check if a reboot is required 
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required
+
+    - name: Reboot the machine if required
+      reboot:
+        msg: "Reboot initiated by Ansible due to package upgrade."
+        pre_reboot_delay: 60
+        reboot_timeout: 600
+        post_reboot_delay: 60
+      when: reboot_required.stat.exists
+
+
+    - name: Ensure /etc/apt/keyrings directory exists
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Download Docker GPG key in dearmored format
+      shell: |
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o {{ docker_gpg_path }}
+      args:
+        creates: "{{ docker_gpg_path }}"
+
+    - name: Set permissions on Docker GPG key
+      file:
+        path: "{{ docker_gpg_path }}"
+        mode: '0644'
+
+    - name: Add Docker APT repository
+      apt_repository:
+        repo: "{{ docker_repo }}"
+        filename: docker
+        state: present
+
+    - name: Update APT cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages to the latest version
+      apt:
+        upgrade: dist
+
+    - name: Install Docker Engine and related packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: latest
+
+    - name: Ensure Docker service is running and enabled
+      service:
+        name: docker
+        state: started
+        enabled: true

@@ -1,0 +1,118 @@
+---
+- name: Install and configure HashiCorp Vault on Ubuntu
+  hosts: all
+  become: true
+
+  vars:
+    vault_version: "1.15.5"
+    vault_user: vault
+    vault_group: vault
+    vault_bin_path: /usr/local/bin/vault
+    vault_config_path: /etc/vault.d
+    vault_data_path: /opt/vault/data
+    vault_service_file: /etc/systemd/system/vault.service
+
+  tasks:
+
+    - name: Install dependencies
+      apt:
+        name:
+          - unzip
+          - curl
+          - gnupg
+          - software-properties-common
+        state: present
+        update_cache: yes
+
+    - name: Add HashiCorp GPG key
+      ansible.builtin.apt_key:
+        url: https://apt.releases.hashicorp.com/gpg
+        state: present
+
+    - name: Add HashiCorp APT repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+        state: present
+        filename: hashicorp
+
+    - name: Install Vault
+      apt:
+        name: vault={{ vault_version }}
+        state: present
+        update_cache: yes
+
+    - name: Create Vault user and group
+      user:
+        name: "{{ vault_user }}"
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    - name: Create Vault configuration directory
+      file:
+        path: "{{ vault_config_path }}"
+        state: directory
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0755'
+
+    - name: Create Vault data directory
+      file:
+        path: "{{ vault_data_path }}"
+        state: directory
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0700'
+
+    - name: Create Vault configuration file
+      copy:
+        dest: "{{ vault_config_path }}/vault.hcl"
+        owner: "{{ vault_user }}"
+        group: "{{ vault_group }}"
+        mode: '0644'
+        content: |
+          storage "file" {
+            path = "{{ vault_data_path }}"
+          }
+
+          listener "tcp" {
+            address     = "0.0.0.0:8200"
+            tls_disable = 1
+          }
+
+          ui = true
+
+    - name: Create systemd service for Vault
+      copy:
+        dest: "{{ vault_service_file }}"
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Vault service
+          Documentation=https://www.vaultproject.io/docs/
+          Requires=network-online.target
+          After=network-online.target
+
+          [Service]
+          User={{ vault_user }}
+          Group={{ vault_group }}
+          ExecStart={{ vault_bin_path }} server -config={{ vault_config_path }}
+          ExecReload=/bin/kill --signal HUP $MAINPID
+          Restart=on-failure
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Reload systemd and start Vault
+      systemd:
+        daemon_reload: yes
+        name: vault
+        enabled: yes
+        state: started
+
+    - name: Wait for Vault to be reachable
+      wait_for:
+        host: 127.0.0.1
+        port: 8200
+        timeout: 30
