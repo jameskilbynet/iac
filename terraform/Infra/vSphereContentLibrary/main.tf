@@ -33,8 +33,8 @@ resource "vsphere_content_library" "publisher_content_library2" {
 }
 
 resource "vsphere_content_library" "publisher_content_library3" {
-  name            = "terraformtest"
-  description     = "terraformtest"
+  name            = "vmclogs"
+  description     = "vmclogs"
   storage_backing = [data.vsphere_datastore.publisher_datastore.id]
   publication {
     published = true
