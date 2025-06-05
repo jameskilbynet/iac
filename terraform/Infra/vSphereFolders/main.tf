@@ -46,8 +46,8 @@ resource "vsphere_folder" "Horizon" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 
-resource "vsphere_folder" "test" {
-  path          = "test"
+resource "vsphere_folder" "Test" {
+  path          = "Test"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
