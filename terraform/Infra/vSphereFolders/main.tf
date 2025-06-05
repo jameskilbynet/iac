@@ -28,12 +28,6 @@ resource "vsphere_folder" "folder" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 
-resource "vsphere_folder" "folder" {
-  path          = "${vsphere_folder.parent.path}/Docker"
-  type          = "vm"
-  datacenter_id = "${data.vsphere_datacenter.dc.id}"
-}
-
 resource "vsphere_folder" "iac" {
   path          = "${vsphere_folder.parent.path}/IAC"
   type          = "vm"
@@ -54,6 +48,12 @@ resource "vsphere_folder" "Horizon" {
 
 resource "vsphere_folder" "test" {
   path          = "test"
+  type          = "vm"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+resource "vsphere_folder" "parent" {
+  path          = "Docker"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
