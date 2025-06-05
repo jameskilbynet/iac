@@ -52,14 +52,16 @@ resource "vsphere_folder" "test" {
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 
-resource "vsphere_folder" "parent" {
-  path          = "Docker"
+
+resource "vsphere_folder" "holodeck" {
+  path          = "${vsphere_folder.test.path}/HoloDeck"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 
-resource "vsphere_folder" "holodeck" {
-  path          = "${vsphere_folder.test.path}/HoloDeck"
+
+resource "vsphere_folder" "Docker" {
+  path          = "${vsphere_folder.test.path}/Docker"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
