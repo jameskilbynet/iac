@@ -54,14 +54,14 @@ resource "vsphere_folder" "Test" {
 
 
 resource "vsphere_folder" "holodeck" {
-  path          = "${vsphere_folder.test.path}/HoloDeck"
+  path          = "${vsphere_folder.Test.path}/HoloDeck"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
 
 
 resource "vsphere_folder" "Docker" {
-  path          = "${vsphere_folder.test.path}/Docker"
+  path          = "${vsphere_folder.Test.path}/Docker"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
