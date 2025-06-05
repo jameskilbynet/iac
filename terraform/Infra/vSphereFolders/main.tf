@@ -16,14 +16,8 @@ provider "vsphere" {
 
 data "vsphere_datacenter" "dc" {}
 
-resource "vsphere_folder" "cvm" {
-  path  = "CVM"
-  type  = "vm"
-  datacenter_id = "${data.vsphere_datacenter.dc.id}"
-}
-
 resource "vsphere_folder" "parent" {
-  path          = "production"
+  path          = "Production"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
@@ -36,24 +30,6 @@ resource "vsphere_folder" "folder" {
 
 resource "vsphere_folder" "iac" {
   path          = "${vsphere_folder.parent.path}/IAC"
-  type          = "vm"
-  datacenter_id = "${data.vsphere_datacenter.dc.id}"
-}
-
-resource "vsphere_folder" "veeam" {
-  path          = "${vsphere_folder.parent.path}/Veeam"
-  type          = "vm"
-  datacenter_id = "${data.vsphere_datacenter.dc.id}"
-}
-
-resource "vsphere_folder" "proxy" {
-  path          = "${vsphere_folder.parent.path}/Veeam/Proxy"
-  type          = "vm"
-  datacenter_id = "${data.vsphere_datacenter.dc.id}"
-}
-
-resource "vsphere_folder" "repo" {
-  path          = "${vsphere_folder.parent.path}/Veeam/Repo"
   type          = "vm"
   datacenter_id = "${data.vsphere_datacenter.dc.id}"
 }
