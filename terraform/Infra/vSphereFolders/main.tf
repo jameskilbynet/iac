@@ -2,7 +2,7 @@ terraform {
   required_providers {
     vsphere = {
       source = "vmware/vsphere"
-      version = "2.7.0"
+      version = "2.13.0"
     }
   }
 }
