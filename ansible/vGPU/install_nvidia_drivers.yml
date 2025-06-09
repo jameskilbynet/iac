@@ -38,6 +38,12 @@
         group: root
         mode: '0755'
 
+    -name: Install NFS client
+      ansible.builtin.apt:
+        name: nfs-common
+        state: present
+        update_cache: yes
+
     - name: Mount NFS share containing NVIDIA drivers
       ansible.builtin.mount:
         src: "{{ nfs_server }}:{{ nfs_export_path }}"
