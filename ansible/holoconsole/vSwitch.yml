@@ -1,0 +1,40 @@
+---
+- name: Build lab-only vSwitch with promiscuous mode
+  hosts: localhost
+  gather_facts: no
+  collections:
+    - community.vmware
+
+  vars:
+    esxi_host: "esx-01.lab.local"   # Exact host to touch
+    vswitch_name: "vSwitch_LabTest"
+
+  tasks:
+    # 2.1  Create the Standard Switch – NO vmnics attached
+    - name: "Create {{ vswitch_name }} without uplinks and enable promiscuous mode"
+      community.vmware.vmware_vswitch:
+        hostname: "{{ lookup('env','VMWARE_HOST') }}"
+        username: "{{ lookup('env','VMWARE_USER') }}"
+        password: "{{ lookup('env','VMWARE_PASSWORD') }}"
+        validate_certs: false
+        esxi_hostname: "{{ esxi_host }}"
+        switch: "{{ vswitch_name }}"
+        # nics is omitted ⇒ stays empty (same as nics: [])
+        security:
+          promiscuous_mode: true
+      delegate_to: localhost
+
+    # 2.2  (Optional) Create a portgroup that inherits the same setting
+    - name: "Add a lab portgroup on the new switch"
+      community.vmware.vmware_portgroup:
+        hostname: "{{ lookup('env','VMWARE_HOST') }}"
+        username: "{{ lookup('env','VMWARE_USER') }}"
+        password: "{{ lookup('env','VMWARE_PASSWORD') }}"
+        validate_certs: false
+        esxi_hostname: "{{ esxi_host }}"
+        switch_name: "{{ vswitch_name }}"
+        portgroup_name: "Lab-PG"
+        vlan_id: 0
+        security:
+          promiscuous_mode: true
+      delegate_to: localhost
