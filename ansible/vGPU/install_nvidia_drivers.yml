@@ -7,6 +7,11 @@
     nvidia_driver_file: NVIDIA-Linux-x86_64-535.247.01-grid.run
     nvidia_driver_path: /tmp/{{ nvidia_driver_file }}
 
+     # NFS share configuration – override in inventory or with --extra-vars as needed
+    nfs_server: 
+    nfs_export_path: 
+    nfs_mount_point: 
+
   pre_tasks:
     - name: Install build tools and headers
       ansible.builtin.apt:
@@ -25,6 +30,22 @@
       environment:
         DEBIAN_FRONTEND: noninteractive
 
+    - name: Ensure NFS mount point exists
+      ansible.builtin.file:
+        path: "{{ nfs_mount_point }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Mount NFS share containing NVIDIA drivers
+      ansible.builtin.mount:
+        src: "{{ nfs_server }}:{{ nfs_export_path }}"
+        path: "{{ nfs_mount_point }}"
+        fstype: nfs
+        opts: rsize=1048576,wsize=1048576,timeo=900,retrans=3
+        state: mounted
+
   tasks:
     - name: Check if NVIDIA driver is already installed
       ansible.builtin.command: nvidia-smi
@@ -39,7 +60,7 @@
 
     - name: Copy NVIDIA vGPU driver installer
       ansible.builtin.copy:
-        src: "files/{{ nvidia_driver_file }}"
+        src: "{{ nfs_mount_point }}/{{ nvidia_driver_file }}"
         dest: "{{ nvidia_driver_path }}"
         mode: '0755'
       when: nvidia_smi_check.rc != 0
