@@ -38,7 +38,7 @@
         group: root
         mode: '0755'
 
-    -name: Install NFS client
+    - name: Install NFS client
       ansible.builtin.apt:
         name: nfs-common
         state: present
