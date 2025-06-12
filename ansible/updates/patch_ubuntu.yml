@@ -26,7 +26,7 @@
         pre_reboot_delay: 0
         post_reboot_delay: 30
         test_command: uptime
-      when: reboot_required_file.stat.exis
+      when: reboot_required_file.stat.exists
 
     - name: Remove dependencies that are no longer required.
       ansible.builtin.apt:
