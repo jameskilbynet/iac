@@ -5,14 +5,6 @@
   gather_facts: yes
 
   pre_tasks:
-    - name: Create required directories
-      file:
-        path: "{{ item }}"
-        state: directory
-        mode: '0755'
-      loop:
-        - "{{ backup_path }}"
-        - "{{ log_path }}"
 
     - name: Check system uptime
       command: uptime
@@ -33,11 +25,6 @@
         msg: "Insufficient free space for patching"
       when: not ansible_check_mode
 
-    - name: Backup current package list
-      shell: dpkg --get-selections > "{{ backup_path }}/pkg_list_$(date +%Y%m%d_%H%M%S).txt"
-      args:
-        creates: "{{ backup_path }}/pkg_list_$(date +%Y%m%d_%H%M%S).txt"
-      when: not ansible_check_mode
 
   tasks:
     - name: Update apt cache
