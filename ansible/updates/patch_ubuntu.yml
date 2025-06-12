@@ -112,8 +112,6 @@
       listen: "log_results"
       when: not ansible_check_mode
 
-  roles:
-    - common
 
   tags:
     - patching
