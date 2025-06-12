@@ -1,6 +1,6 @@
 ---
 - name: Ubuntu Server Patching Playbook
-  hosts: ubuntu_servers
+  hosts: all
   become: yes
   gather_facts: yes
 
