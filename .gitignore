@@ -37,3 +37,4 @@ override.tf.json
 terraform.rc
 terraform/VM/VMCLogs/.terraform.lock.hcl
 .vscode/settings.json
+ansible/.DS_Store

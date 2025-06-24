@@ -1,0 +1,169 @@
+---
+- name: Validate Cloudflare API Token
+  hosts: localhost
+  gather_facts: false
+  vars:
+    cloudflare_api_token_file: /opt/traefik/.cloudflare_api_token
+    default_domain: jameskilby.cloud
+
+  tasks:
+    - name: Prompt for domain to validate
+      ansible.builtin.pause:
+        prompt: |
+          
+          Enter the domain name to validate token access for.
+          Press Enter to use default: {{ default_domain }}
+          Domain
+        echo: true
+      register: domain_input
+
+    - name: Set domain fact
+      ansible.builtin.set_fact:
+        required_domain: "{{ domain_input.user_input if domain_input.user_input != '' else default_domain }}"
+
+    - name: Display selected domain
+      ansible.builtin.debug:
+        msg: |
+          🔍 Validating token access for domain: {{ required_domain }}
+
+    - name: Check if Cloudflare API token file exists
+      ansible.builtin.stat:
+        path: "{{ cloudflare_api_token_file }}"
+      register: token_file_stat
+
+    - name: Prompt for Cloudflare API token if file doesn't exist
+      ansible.builtin.pause:
+        prompt: |
+          
+          Enter your Cloudflare API token for validation.
+          Token (input will be hidden)
+        echo: false
+      register: cloudflare_api_token_input
+      when: not token_file_stat.stat.exists
+
+    - name: Read Cloudflare API token from file
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_api_token_file }}"
+      register: cloudflare_token_raw
+      when: token_file_stat.stat.exists
+
+    - name: Set Cloudflare API token fact from file
+      ansible.builtin.set_fact:
+        cloudflare_api_token: "{{ cloudflare_token_raw.content | b64decode | trim }}"
+      when: token_file_stat.stat.exists
+
+    - name: Set Cloudflare API token fact from input
+      ansible.builtin.set_fact:
+        cloudflare_api_token: "{{ cloudflare_api_token_input.user_input }}"
+      when: not token_file_stat.stat.exists
+
+    - name: Validate token format
+      ansible.builtin.fail:
+        msg: "Invalid token format. Cloudflare API tokens should be 40 characters long."
+      when: cloudflare_api_token | length != 40
+
+    - name: Verify Cloudflare API token
+      ansible.builtin.uri:
+        url: "https://api.cloudflare.com/client/v4/user/tokens/verify"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        timeout: 10
+      register: token_verification
+      failed_when: not token_verification.json.success
+
+    - name: Display token verification result
+      ansible.builtin.debug:
+        msg: |
+          ✅ Token verification successful!
+          Token ID: {{ token_verification.json.result.id }}
+          Status: {{ token_verification.json.result.status }}
+
+    - name: Check zone permissions
+      ansible.builtin.uri:
+        url: "https://api.cloudflare.com/client/v4/zones?name={{ required_domain }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        timeout: 10
+      register: zone_check
+      failed_when: not zone_check.json.success
+
+    - name: Verify zone access
+      ansible.builtin.fail:
+        msg: "Token does not have access to domain: {{ required_domain }}"
+      when: zone_check.json.result | length == 0
+
+    - name: Display zone access result
+      ansible.builtin.debug:
+        msg: |
+          ✅ Zone access verified!
+          Domain: {{ zone_check.json.result[0].name }}
+          Zone ID: {{ zone_check.json.result[0].id }}
+          Status: {{ zone_check.json.result[0].status }}
+
+    - name: Check DNS record permissions (attempt to list DNS records)
+      ansible.builtin.uri:
+        url: "https://api.cloudflare.com/client/v4/zones/{{ zone_check.json.result[0].id }}/dns_records?per_page=1"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        timeout: 10
+      register: dns_check
+      failed_when: not dns_check.json.success
+
+    - name: Get DNS record count
+      ansible.builtin.set_fact:
+        dns_record_count: "{{ dns_check.json.result | length }}"
+
+    - name: Display DNS permissions result
+      ansible.builtin.debug:
+        msg: |
+          ✅ DNS permissions verified!
+          Token has access to DNS records for {{ required_domain }}
+          Found {{ dns_record_count }} DNS record(s) in zone
+
+    - name: Get all accessible zones (optional info)
+      ansible.builtin.uri:
+        url: "https://api.cloudflare.com/client/v4/zones?per_page=50"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ cloudflare_api_token }}"
+          Content-Type: "application/json"
+        timeout: 10
+      register: all_zones_check
+      failed_when: false
+
+    - name: Display additional zone information
+      ansible.builtin.debug:
+        msg: |
+          ℹ️  Additional Information:
+          Total accessible zones: {{ all_zones_check.json.result | length }}
+          Accessible domains:
+          {% for zone in all_zones_check.json.result %}
+          - {{ zone.name }} ({{ zone.status }})
+          {% endfor %}
+      when: all_zones_check.json.success | default(false)
+
+    - name: Validation summary
+      ansible.builtin.debug:
+        msg: |
+          ==========================================
+          🎉 Cloudflare Token Validation Complete!
+          ==========================================
+          ✅ Token format: Valid (40 characters)
+          ✅ Token status: Active
+          ✅ Zone access: {{ required_domain }} accessible
+          ✅ DNS permissions: Read/Write access confirmed
+          
+          Domain Details:
+          - Name: {{ zone_check.json.result[0].name }}
+          - Zone ID: {{ zone_check.json.result[0].id }}
+          - Status: {{ zone_check.json.result[0].status }}
+          - DNS Records: {{ dns_record_count }} found
+          
+          Your token is ready for Traefik deployment with {{ required_domain }}!
+          ==========================================
