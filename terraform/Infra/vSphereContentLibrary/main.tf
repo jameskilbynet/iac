@@ -22,7 +22,7 @@ data "vsphere_datacenter" "datacenter_a" {
 }
 
 data "vsphere_datastore" "publisher_datastore" {
-  name          = "vSAN"
+  name          = "vsanDatastore"
   datacenter_id = data.vsphere_datacenter.datacenter_a.id
 }
 
