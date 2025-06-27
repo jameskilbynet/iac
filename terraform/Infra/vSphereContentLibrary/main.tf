@@ -17,11 +17,6 @@ provider "vsphere" {
   allow_unverified_ssl = true
 }
 
-# Define these variables or pass them via a tfvars file or CLI
-variable "vsphere_user" {}
-variable "vsphere_password" {}
-variable "vsphere_server" {}
-
 data "vsphere_datacenter" "datacenter_a" {
   name = "uk-bhr-p-dc-1"
 }
