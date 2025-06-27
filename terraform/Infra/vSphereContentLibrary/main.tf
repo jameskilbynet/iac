@@ -22,7 +22,7 @@ data "vsphere_datacenter" "datacenter_a" {
 }
 
 data "vsphere_datastore" "publisher_datastore" {
-  name          = "quanta01-iscsi01"
+  name          = "vSAN"
   datacenter_id = data.vsphere_datacenter.datacenter_a.id
 }
 
