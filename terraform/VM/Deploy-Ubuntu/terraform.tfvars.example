@@ -1,0 +1,35 @@
+# vSphere Connection Variables
+vsphere_user     = "administrator@vsphere.local"
+vsphere_password = "your-vsphere-password"
+vsphere_server   = "vcenter.example.com"
+
+# vSphere Infrastructure Variables
+datacenter = "Datacenter"
+datastore  = "datastore1"
+cluster    = "Cluster"
+network    = "VM Network"
+vm_folder  = "Production/Ubuntu"
+
+# Template and VM Variables
+template_name = "ubuntu-22.04-template"
+vm_name       = "ubuntu-web-server-01"
+
+# VM Specifications (optional - will use defaults if not specified)
+num_cpus   = 2
+memory     = 4096  # 4GB in MB
+disk_size  = 50    # 50GB (optional, will use template size if not specified)
+
+# VM Customization (set customize_vm = true to enable)
+customize_vm = false
+
+# Network Customization (required if customize_vm = true)
+hostname      = "web-server-01"
+domain        = "example.com"
+ipv4_address  = "192.168.1.100"
+ipv4_netmask  = 24
+ipv4_gateway  = "192.168.1.1"
+dns_servers   = ["8.8.8.8", "8.8.4.4"]
+
+# Timeout Settings (optional - will use defaults if not specified)
+wait_for_guest_ip_timeout = 5
+wait_for_guest_net_timeout = 5 
