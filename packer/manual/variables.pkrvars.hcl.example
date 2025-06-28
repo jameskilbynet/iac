@@ -1,0 +1,24 @@
+# vSphere Configuration Variables
+# Copy this file to variables.pkrvars.hcl and fill in your values
+
+# vSphere Server Connection
+vsphere_server   = "vcenter.example.com"
+vsphere_username = "administrator@vsphere.local"
+vsphere_password = "your-password-here"
+
+# vSphere Infrastructure
+vsphere_datacenter = "Datacenter"
+vsphere_cluster    = "Cluster"
+vsphere_datastore  = "datastore1"
+vsphere_network    = "VM Network"
+vsphere_folder     = "Templates"  # Optional: folder to place VM/template
+vsphere_resource_pool = ""        # Optional: leave empty for default
+
+# VM Configuration (optional overrides)
+vm_name    = "ubuntu-24.04-server-template"
+vm_memory  = 2048
+vm_cpus    = 2
+disk_size  = 20480  # 20GB in MB
+
+# SSH Configuration
+ssh_username = "ubuntu"

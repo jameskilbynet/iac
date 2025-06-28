@@ -1,0 +1,37 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  network:
+    network:
+      version: 2
+      ethernets:
+        all-en:
+          match:
+            name: "en*"
+          dhcp4: true
+        all-eth:
+          match:
+            name: "eth*"
+          dhcp4: true
+  storage:
+    layout:
+      name: direct
+  identity:
+    hostname: ubuntu-server
+    username: ubuntu
+    # Password: ubuntu
+    password: "$6$exDY1mhS4KUYCE/2$zmn9ToZwTKLhCw.b4/b.ZRTIZM30JZ4QrOQ2aOXJ8yk96xpcCof0kxKwuX1kqLG/ygbJ1f8wxED22bTL4F46P0"
+  ssh:
+    install-server: true
+    allow-pw: true
+  packages:
+    - openssh-server
+    - open-vm-tools
+  late-commands:
+    - echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/ubuntu
+    - chmod 440 /target/etc/sudoers.d/ubuntu
+    - curtin in-target --target=/target -- systemctl enable ssh
+    - curtin in-target --target=/target -- systemctl enable open-vm-tools

@@ -1,0 +1,25 @@
+# Packer build artifacts
+output-*/
+*.log
+
+# Variable files containing sensitive information
+variables.pkrvars.hcl
+*.auto.pkrvars.hcl
+
+# SSH keys
+*.pem
+*.key
+*.pub
+
+# Temporary files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Packer cache
+packer_cache/
