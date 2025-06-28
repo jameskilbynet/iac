@@ -9,8 +9,8 @@
 
      # NFS share configuration – override in inventory or with --extra-vars as needed
     nfs_server: nas.jameskilby.cloud
-    nfs_export_path: /mnt/pool1/iso
-    nfs_mount_point: /mnt/nvidia
+    nfs_export_path: /mnt/pool1/ISO/nvidia
+    nfs_mount_point: /mnt/iso/nvidia
 
   pre_tasks:
     - name: Install build tools and headers
@@ -76,6 +76,7 @@
         src: "{{ nfs_mount_point }}/{{ nvidia_driver_file }}"
         dest: "{{ nvidia_driver_path }}"
         mode: '0755'
+        remote_src: true
       when: nvidia_smi_check.rc != 0
 
     - name: Run NVIDIA vGPU driver installer
