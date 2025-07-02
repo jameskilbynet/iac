@@ -1,6 +1,6 @@
 # Infrastructure as Code (IAC)
 
-A comprehensive Infrastructure as Code repository for automating VMware vSphere environments, container management, and system administration tasks. This project is designed to work with [Semaphore](https://semaphoreui.com/) for automated deployments and management.
+This is a work in progress Infrastructure as Code repository for automating VMware vSphere environments, container management, and system administration tasks. This project is designed to work with [Semaphore](https://semaphoreui.com/) for automated deployments and management.
 
 ## 🏗️ Project Overview
 
