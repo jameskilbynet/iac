@@ -6,6 +6,7 @@
   vars:
     nvidia_driver_file: NVIDIA-Linux-x86_64-535.247.01-grid.run
     nvidia_driver_path: /tmp/{{ nvidia_driver_file }}
+    nvidia_licence_file: client_configuration_token_04-08-2025-16-54-19.bin
 
      # NFS share configuration – override in inventory or with --extra-vars as needed
     nfs_server: nas.jameskilby.cloud
@@ -78,6 +79,14 @@
         mode: '0755'
         remote_src: true
       when: nvidia_smi_check.rc != 0
+
+      -name: copy NVIDIA Licence token
+      ansible.builtin.copy:
+        src: "{{ nfs_mount_point }}/licence/{{ nvidia_licence_file }}"
+        dest: /etc/nvidia/ClientConfigToken
+        mode: '744'
+        remote_src: true
+
 
     - name: Run NVIDIA vGPU driver installer
       ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check"
