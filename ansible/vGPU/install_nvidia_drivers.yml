@@ -95,9 +95,9 @@
 
     - name: Restart NVIDIA vGPU client software (nvidia-gridd)
       ansible.builtin.systemd:
-      name: nvidia-gridd
-      state: restarted
-      enabled: true
+        name: nvidia-gridd
+        state: restarted
+        enabled: true
 
     - name: Wait for nvidia-gridd to be active
       ansible.builtin.systemd:
