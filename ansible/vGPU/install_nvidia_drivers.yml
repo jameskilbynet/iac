@@ -93,6 +93,24 @@
         creates: /usr/bin/nvidia-smi
       when: nvidia_smi_check.rc != 0
 
+    - name: Restart NVIDIA vGPU client software (nvidia-gridd)
+      ansible.builtin.systemd:
+      name: nvidia-gridd
+      state: restarted
+      enabled: true
+
+    - name: Wait for nvidia-gridd to be active
+      ansible.builtin.systemd:
+        name: nvidia-gridd
+      register: gridd_status
+      retries: 5
+      delay: 2
+      until: gridd_status.status.ActiveState == "active"
+
+    - name: Confirm gridd service is active
+      ansible.builtin.debug:
+        msg: "nvidia-gridd is running."
+
     - name: Check NVIDIA license status
       ansible.builtin.shell: nvidia-smi -q | grep License
       register: license_output
