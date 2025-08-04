@@ -1,0 +1,49 @@
+- name: Install NVIDIA vGPU drivers and license file
+  hosts: all
+  become: yes
+
+- name: Check if NVIDIA license token directory exists
+  ansible.builtin.stat:
+    path: /var/lib/nvidia/licensing/
+  register: license_dir
+
+- name: Fail if license directory does not exist
+  ansible.builtin.fail:
+    msg: "License directory not found: /var/lib/nvidia/licensing/"
+  when: not license_dir.stat.exists
+
+- name: Check for .tok license token file
+  ansible.builtin.find:
+    paths: /var/lib/nvidia/licensing/
+    patterns: "*.tok"
+  register: token_files
+
+- name: Fail if no .tok license token file found
+  ansible.builtin.fail:
+    msg: "No NVIDIA license token (*.tok) found in /var/lib/nvidia/licensing/"
+  when: token_files.matched == 0
+
+- name: Check if nvidia-gridd service is running
+  ansible.builtin.systemd:
+    name: nvidia-gridd
+  register: gridd_status
+
+- name: Fail if nvidia-gridd service is not active
+  ansible.builtin.fail:
+    msg: "nvidia-gridd service is not active."
+  when: gridd_status.status.ActiveState != "active"
+
+- name: Check NVIDIA license status via nvidia-smi
+  ansible.builtin.shell: nvidia-smi -q | grep "License Status"
+  register: license_status
+  changed_when: false
+  failed_when: license_status.rc != 0
+
+- name: Show license status
+  ansible.builtin.debug:
+    var: license_status.stdout
+
+- name: Fail if vGPU is unlicensed
+  ansible.builtin.fail:
+    msg: "NVIDIA vGPU is Unlicensed!"
+  when: "'Unlicensed' in license_status.stdout"

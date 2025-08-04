@@ -83,7 +83,7 @@
     - name: copy NVIDIA Licence token
       ansible.builtin.copy:
         src: "{{ nfs_mount_point }}/{{ nvidia_licence_file }}"
-        dest: /var/lib/nvidia/licensing/
+        dest: /etc/nvidia/ClientConfigToken/
         mode: '744'
         remote_src: true
 
