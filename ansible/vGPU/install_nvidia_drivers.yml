@@ -80,6 +80,15 @@
         remote_src: true
       when: nvidia_smi_check.rc != 0
 
+    - name: Ensure NVIDIA ClientConfigToken directory exists
+      ansible.builtin.file:
+        path: /etc/nvidia/ClientConfigToken
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+
     - name: copy NVIDIA Licence token
       ansible.builtin.copy:
         src: "{{ nfs_mount_point }}/{{ nvidia_licence_file }}"
@@ -115,8 +124,9 @@
       ansible.builtin.shell: |
         nvidia-smi -q | awk '/vGPU Software Licensed Product/,/^$/'
       register: vgpu_info
+      changed_when: false
+      failed_when: vgpu_info.rc != 0
 
     - name: Show vGPU license info
       ansible.builtin.debug:
-      msg: "{{ vgpu_info.stdout }}"
-
+        msg: "{{ vgpu_info.stdout | trim }}"
