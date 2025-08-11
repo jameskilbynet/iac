@@ -111,11 +111,12 @@
       ansible.builtin.debug:
         msg: "nvidia-gridd is running."
 
-    - name: Check NVIDIA license status
-      ansible.builtin.shell: nvidia-smi -q | grep License
-      register: license_output
-      changed_when: false
+    - name: Get vGPU license info
+      ansible.builtin.shell: |
+        nvidia-smi -q | awk '/vGPU Software Licensed Product/,/^$/'
+      register: vgpu_info
 
-    - name: Show NVIDIA license info
+    - name: Show vGPU license info
       ansible.builtin.debug:
-       var: license_output.stdout_lines
+      msg: "{{ vgpu_info.stdout }}"
+
