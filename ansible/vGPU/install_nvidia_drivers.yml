@@ -123,6 +123,8 @@
     - name: Check vGPU license status
       ansible.builtin.shell: |
         nvidia-smi -q 
+         environment:
+          PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       register: vgpu_info
       changed_when: false
       failed_when: "'Unlicensed' in vgpu_info.stdout"
