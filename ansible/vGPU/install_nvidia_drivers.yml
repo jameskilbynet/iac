@@ -119,6 +119,10 @@
     - name: Confirm gridd service is active
       ansible.builtin.debug:
         msg: "nvidia-gridd is running."
+      
+    - name: Wait for 30 seconds
+      pause:
+        seconds: 30
 
     - name: Check vGPU license status
       ansible.builtin.shell: |
