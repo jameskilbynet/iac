@@ -120,7 +120,7 @@
       ansible.builtin.debug:
         msg: "nvidia-gridd is running."
       
-    - name: Wait for 30 seconds
+    - name: Wait for 30 seconds to ensure license is applied
       pause:
         seconds: 30
 
