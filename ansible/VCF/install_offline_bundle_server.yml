@@ -18,7 +18,7 @@
         mode: '0755'
 
     - name: Create and start Nginx container with volume mapping
-      docker_container::
+      community.docker.docker_container:
         name: VCF_Offline_Bundle_Server
         image: nginx:latest
         state: started
