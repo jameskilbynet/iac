@@ -9,7 +9,13 @@
         name: nginx:latest
         source: pull
 
-      - name: Create VCF Bundle Server Directory
+    - name: Create VCF Offline Bundle Server directory
+      ansible.builtin.file:
+        path: /vcf/
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
 
     - name: Create and start Nginx container with volume mapping
       docker_container:
