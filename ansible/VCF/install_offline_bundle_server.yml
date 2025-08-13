@@ -41,13 +41,3 @@
           traefik.http.routers.vcf.tls.certresolver: cloudflare
           traefik.http.services.vcf.loadbalancer.server.port: 80
 
-    - name: Verify the mapped path is accessible by nginx inside the container
-      shell: docker exec my_nginx_container ls -l /usr/share/nginx/html
-      args:
-        chdir: /path/to/host/directory  # Start command from host directory (optional)
-      register: verify_result
-      changed: no
-
-    - name: Display verification result if needed
-      debug:
-        var: verify_result.stdout
