@@ -17,6 +17,12 @@
         group: root
         mode: '0755'
 
+    - name: Create Traefik external network
+      community.docker.docker_network:
+        name: traefik
+        driver: bridge
+        state: present
+
     - name: Create and start Nginx container with volume mapping
       community.docker.docker_container:
         name: VCF_Offline_Bundle_Server
@@ -25,6 +31,8 @@
         restart_policy: always
         volumes:
           - "/vcf:/usr/share/nginx/html:rw"  # Map host directory to container's document root
+        networks:
+          - name: traefik
         # Other optional configurations for Nginx container can be added here
         labels:
           # Add your custom Docker labels here
@@ -34,10 +42,19 @@
           description: "Nginx web server with content from host directory {{ inventory_hostname }}"
           com.example.version: 1.0.0
           com.example.description: VCF Offline Bundle Server
-          traefik.enable: true
-          traefik.http.routers.vcf.rule: Host(vcf.jameskilby.cloud)
-          traefik.http.routers.vcf.entrypoints: websecure
-          traefik.http.routers.vcf.tls: true
-          traefik.http.routers.vcf.tls.certresolver: cloudflare
-          traefik.http.services.vcf.loadbalancer.server.port: 80
+          # Traefik labels
+          traefik.enable: "true"
+          # HTTPS router
+          traefik.http.routers.vcf.rule: "Host(`vcf.jameskilby.cloud`)"
+          traefik.http.routers.vcf.entrypoints: "websecure"
+          traefik.http.routers.vcf.tls: "true"
+          traefik.http.routers.vcf.tls.certresolver: "cloudflare"
+          # HTTP router with redirect
+          traefik.http.routers.vcf-http.rule: "Host(`vcf.jameskilby.cloud`)"
+          traefik.http.routers.vcf-http.entrypoints: "web"
+          traefik.http.routers.vcf-http.middlewares: "redirect-to-https"
+          # Redirect middleware
+          traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: "https"
+          # Service configuration
+          traefik.http.services.vcf.loadbalancer.server.port: "80"
 
