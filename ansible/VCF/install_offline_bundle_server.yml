@@ -1,0 +1,47 @@
+---
+- name: Deploy Nginx in Docker Container with Host Path Mapping
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Ensure Nginx image is available (if not, it will be pulled)
+      docker_image:
+        name: nginx:latest
+        source: pull
+
+      - name: Create VCF Bundle Server Directory
+
+    - name: Create and start Nginx container with volume mapping
+      docker_container:
+        name: my_nginx_container
+        image: nginx:latest
+        state: started
+        restart_policy: always
+        volumes:
+          - "/path/to/host/directory:/usr/share/nginx/html:rw"  # Map host directory to container's document root
+        # Other optional configurations for Nginx container can be added here
+        labels:
+          # Add your custom Docker labels here
+          deployment.environment: "{{ ansible_host }}_nginx"
+          owner_team: it-support
+          project.name: my_project
+          description: "Nginx web server with content from host directory {{ inventory_hostname }}"
+          com.example.version: 1.0.0
+          com.example.description: VCF Offline Bundle Server
+          traefik.enable: true
+          traefik.http.routers.vcf.rule: Host(vcf.jameskilby.cloud)
+          traefik.http.routers.vcf.entrypoints: websecure
+          traefik.http.routers.vcf.tls: true
+          traefik.http.routers.vcf.tls.certresolver: cloudflare
+          traefik.http.services.vcf.loadbalancer.server.port: 80
+
+    - name: Verify the mapped path is accessible by nginx inside the container
+      shell: docker exec my_nginx_container ls -l /usr/share/nginx/html
+      args:
+        chdir: /path/to/host/directory  # Start command from host directory (optional)
+      register: verify_result
+      changed: no
+
+    - name: Display verification result if needed
+      debug:
+        var: verify_result.stdout
