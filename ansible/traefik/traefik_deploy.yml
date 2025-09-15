@@ -1,6 +1,6 @@
 ---
 - name: Deploy Traefik with Cloudflare SSL
-  hosts: traefik_servers
+  hosts: all
   become: true
   gather_facts: true
 
