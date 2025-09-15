@@ -127,12 +127,6 @@
         modification_time: preserve
         access_time: preserve
 
-    # Cloudflare API token should be passed as a variable (cloudflare_api_token)
-    # Example: ansible-playbook -e cloudflare_api_token=your_token_here traefik_deploy.yml
-    - name: Validate required Cloudflare API token variable
-      ansible.builtin.fail:
-        msg: "Cloudflare API token must be provided as a variable (-e cloudflare_api_token=your_token)"
-      when: cloudflare_api_token is not defined or cloudflare_api_token == ""
 
     - name: Create Docker network for Traefik
       community.docker.docker_network:
