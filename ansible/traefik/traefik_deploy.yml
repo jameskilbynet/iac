@@ -127,46 +127,12 @@
         modification_time: preserve
         access_time: preserve
 
-    - name: Check if Cloudflare API token file exists
-      ansible.builtin.stat:
-        path: "{{ cloudflare_api_token_file }}"
-      register: token_file_stat
-
-    - name: Prompt for Cloudflare API token
-      ansible.builtin.pause:
-        prompt: |
-          
-          Enter your Cloudflare API token with Zone:DNS:Edit permissions.
-          You can create one at: https://dash.cloudflare.com/profile/api-tokens
-          Token (input will be hidden)
-        echo: false
-      register: cloudflare_api_token_input
-      when: not token_file_stat.stat.exists
-      delegate_to: localhost
-      become: false
-
-    - name: Save Cloudflare API token securely
-      ansible.builtin.copy:
-        dest: "{{ cloudflare_api_token_file }}"
-        content: "{{ cloudflare_api_token_input.user_input }}"
-        owner: root
-        group: root
-        mode: '0600'
-      when: not token_file_stat.stat.exists
-
-    - name: Read Cloudflare API token
-      ansible.builtin.slurp:
-        src: "{{ cloudflare_api_token_file }}"
-      register: cloudflare_token_raw
-
-    - name: Set Cloudflare API token fact
-      ansible.builtin.set_fact:
-        cloudflare_api_token: "{{ cloudflare_token_raw.content | b64decode | trim }}"
-
-    - name: Validate Cloudflare API token format
+    # Cloudflare API token should be passed as a variable (cloudflare_api_token)
+    # Example: ansible-playbook -e cloudflare_api_token=your_token_here traefik_deploy.yml
+    - name: Validate required Cloudflare API token variable
       ansible.builtin.fail:
-        msg: "Cloudflare API token appears to be invalid (should be 40 characters)"
-      when: cloudflare_api_token | length != 40
+        msg: "Cloudflare API token must be provided as a variable (-e cloudflare_api_token=your_token)"
+      when: cloudflare_api_token is not defined or cloudflare_api_token == ""
 
     - name: Create Docker network for Traefik
       community.docker.docker_network:
