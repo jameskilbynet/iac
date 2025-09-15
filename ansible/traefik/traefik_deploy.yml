@@ -179,7 +179,7 @@
           - "{{ traefik_port_web }}:80"
           - "{{ traefik_port_websecure }}:443"
         env:
-          CLOUDFLARE_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
+          CLOUDFLARE_API_TOKEN: "{{ cloudflare_api_token }}"
         volumes:
           - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
           - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
