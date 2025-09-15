@@ -1,0 +1,319 @@
+---
+- name: Deploy Traefik with Cloudflare SSL
+  hosts: traefik_servers
+  become: true
+  gather_facts: true
+
+  vars:
+    traefik_static_config: |
+      # Entry points configuration
+      entryPoints:
+        web:
+          address: ":{{ traefik_port_web }}"
+          http:
+            redirections:
+              entrypoint:
+                to: websecure
+                scheme: https
+                permanent: true
+        websecure:
+          address: ":{{ traefik_port_websecure }}"
+
+      # Provider configuration
+      providers:
+        docker:
+          endpoint: "unix:///var/run/docker.sock"
+          exposedByDefault: false
+          network: "{{ traefik_network }}"
+          watch: true
+        file:
+          filename: /etc/traefik/dynamic.yml
+          watch: true
+
+      # Certificate resolvers
+      certificatesResolvers:
+        cloudflare:
+          acme:
+            storage: "/acme/acme.json"
+            dnsChallenge:
+              provider: cloudflare
+              delayBeforeCheck: {{ acme_delay_before_check }}
+              resolvers:
+                {% for resolver in dns_resolvers %}
+                - "{{ resolver }}"
+                {% endfor %}
+
+      # API configuration
+      api:
+        dashboard: true
+        insecure: false
+
+      # Health check endpoint
+      ping: {}
+
+      # Global configuration
+      global:
+        checkNewVersion: false
+        sendAnonymousUsage: false
+
+      # Logging
+      log:
+        level: {{ log_level }}
+        format: {{ log_format }}
+      accessLog:
+        format: {{ log_format }}
+
+    traefik_dynamic_config: |
+      # Dynamic configuration for Traefik dashboard
+      http:
+        middlewares:
+          dashboard-auth:
+            basicAuth:
+              users:
+                - "{{ dashboard_admin_user }}:{{ dashboard_admin_password_hash }}"
+        routers:
+          traefik-dashboard:
+            rule: "Host(`{{ dashboard_domain }}`)"
+            entryPoints:
+              - websecure
+            service: api@internal
+            tls:
+              certResolver: cloudflare
+            middlewares:
+              - dashboard-auth
+
+  pre_tasks:
+    - name: Check if running on supported OS
+      ansible.builtin.fail:
+        msg: "This playbook only supports Ubuntu/Debian"
+      when: ansible_os_family not in ['Debian']
+
+
+    - name: Add user to docker group
+      ansible.builtin.user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: true
+
+    - name: Verify Docker is working
+      ansible.builtin.command:
+        cmd: docker --version
+      register: docker_version
+      changed_when: false
+
+    - name: Display Docker version
+      ansible.builtin.debug:
+        msg: "Docker version: {{ docker_version.stdout }}"
+
+  tasks:
+    - name: Create Traefik directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        mode: "{{ item.mode }}"
+        owner: root
+        group: root
+      loop:
+        - { path: "{{ traefik_config_dir }}", mode: "0755" }
+        - { path: "{{ traefik_cert_dir }}", mode: "0700" }
+
+    - name: Initialize ACME certificate storage
+      ansible.builtin.file:
+        path: "{{ traefik_cert_dir }}/acme.json"
+        state: touch
+        mode: '0600'
+        owner: root
+        group: root
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Check if Cloudflare API token file exists
+      ansible.builtin.stat:
+        path: "{{ cloudflare_api_token_file }}"
+      register: token_file_stat
+
+    - name: Prompt for Cloudflare API token
+      ansible.builtin.pause:
+        prompt: |
+          
+          Enter your Cloudflare API token with Zone:DNS:Edit permissions.
+          You can create one at: https://dash.cloudflare.com/profile/api-tokens
+          Token (input will be hidden)
+        echo: false
+      register: cloudflare_api_token_input
+      when: not token_file_stat.stat.exists
+      delegate_to: localhost
+      become: false
+
+    - name: Save Cloudflare API token securely
+      ansible.builtin.copy:
+        dest: "{{ cloudflare_api_token_file }}"
+        content: "{{ cloudflare_api_token_input.user_input }}"
+        owner: root
+        group: root
+        mode: '0600'
+      when: not token_file_stat.stat.exists
+
+    - name: Read Cloudflare API token
+      ansible.builtin.slurp:
+        src: "{{ cloudflare_api_token_file }}"
+      register: cloudflare_token_raw
+
+    - name: Set Cloudflare API token fact
+      ansible.builtin.set_fact:
+        cloudflare_api_token: "{{ cloudflare_token_raw.content | b64decode | trim }}"
+
+    - name: Validate Cloudflare API token format
+      ansible.builtin.fail:
+        msg: "Cloudflare API token appears to be invalid (should be 40 characters)"
+      when: cloudflare_api_token | length != 40
+
+    - name: Create Docker network for Traefik
+      community.docker.docker_network:
+        name: "{{ traefik_network }}"
+        state: present
+      register: network_result
+
+    - name: Display network creation result
+      ansible.builtin.debug:
+        msg: "Traefik network created: {{ network_result.network.Name }}"
+
+    - name: Write Traefik static configuration
+      ansible.builtin.copy:
+        content: "{{ traefik_static_config }}"
+        dest: "{{ traefik_config_dir }}/traefik.yml"
+        mode: '0644'
+        owner: root
+        group: root
+      register: static_config_result
+
+    - name: Write Traefik dynamic configuration
+      ansible.builtin.copy:
+        content: "{{ traefik_dynamic_config }}"
+        dest: "{{ traefik_config_dir }}/dynamic.yml"
+        mode: '0644'
+        owner: root
+        group: root
+      register: dynamic_config_result
+
+    - name: Pull Traefik Docker image
+      community.docker.docker_image:
+        name: "{{ traefik_image }}"
+        source: pull
+        force_source: true
+      register: image_pull_result
+
+    - name: Stop existing Traefik container if running
+      community.docker.docker_container:
+        name: "{{ traefik_container_name }}"
+        state: absent
+      ignore_errors: true
+
+    - name: Deploy Traefik container
+      community.docker.docker_container:
+        name: "{{ traefik_container_name }}"
+        image: "{{ traefik_image }}"
+        restart_policy: unless-stopped
+        state: started
+        ports:
+          - "{{ traefik_port_web }}:80"
+          - "{{ traefik_port_websecure }}:443"
+        env:
+          CLOUDFLARE_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
+        volumes:
+          - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+          - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+          - "{{ traefik_cert_dir }}:/acme"
+          - "/var/run/docker.sock:/var/run/docker.sock:ro"
+        labels:
+          traefik.enable: "true"
+          traefik.http.routers.traefik.rule: "Host(`{{ dashboard_domain }}`)"
+          traefik.http.routers.traefik.service: "api@internal"
+          traefik.http.routers.traefik.entrypoints: "websecure"
+          traefik.http.routers.traefik.middlewares: "dashboard-auth@file"
+        networks:
+          - name: "{{ traefik_network }}"
+        log_driver: json-file
+        log_options:
+          max-size: "{{ log_max_size }}"
+          max-file: "{{ log_max_files }}"
+        healthcheck:
+          test: ["CMD", "traefik", "healthcheck", "--ping"]
+          interval: "{{ healthcheck_interval }}"
+          timeout: "{{ healthcheck_timeout }}"
+          retries: "{{ healthcheck_retries }}"
+          start_period: "{{ healthcheck_start_period }}"
+      register: container_result
+
+    - name: Wait for Traefik to become healthy
+      ansible.builtin.pause:
+        seconds: 30
+
+    - name: Check Traefik container status
+      community.docker.docker_container_info:
+        name: "{{ traefik_container_name }}"
+      register: container_info
+
+    - name: Fail if Traefik container is not running
+      ansible.builtin.fail:
+        msg: "Traefik container failed to start or is unhealthy"
+      when: container_info.container.State.Status != "running"
+
+    - name: Display Traefik container status
+      ansible.builtin.debug:
+        msg: |
+          Traefik Status: {{ container_info.container.State.Status }}
+          Health: {{ container_info.container.State.Health.Status | default('N/A') }}
+          Started: {{ container_info.container.State.StartedAt }}
+
+    - name: Deploy test nginx service
+      community.docker.docker_container:
+        name: "{{ test_service_name }}"
+        image: "{{ test_service_image }}"
+        restart_policy: unless-stopped
+        state: started
+        networks:
+          - name: "{{ traefik_network }}"
+        labels:
+          traefik.enable: "true"
+          traefik.http.routers.nginx-test.rule: "Host(`{{ test_service_domain }}`)"
+          traefik.http.routers.nginx-test.entrypoints: "websecure"
+          traefik.http.routers.nginx-test.tls.certresolver: "cloudflare"
+          traefik.http.services.nginx-test.loadbalancer.server.port: "80"
+
+    - name: Get recent Traefik logs
+      ansible.builtin.command:
+        cmd: docker logs --tail 50 {{ traefik_container_name }}
+      register: traefik_logs
+      changed_when: false
+
+    - name: Display ACME and certificate related logs
+      ansible.builtin.debug:
+        msg: "{{ item }}"
+      loop: "{{ traefik_logs.stdout_lines | select('search', 'acme|certificate|error|WARN|ERROR') | list }}"
+      when: traefik_logs.stdout_lines | select('search', 'acme|certificate|error|WARN|ERROR') | list | length > 0
+
+
+
+  post_tasks:
+    - name: Deployment summary
+      ansible.builtin.debug:
+        msg: |
+          ==========================================
+          Traefik Deployment Summary
+          ==========================================
+          Container Status: {{ container_info.container.State.Status }}
+          Dashboard URL: https://{{ dashboard_domain }}
+          Test Service URL: https://{{ test_service_domain }}
+          
+          Next Steps:
+          1. Ensure DNS records point to this server:
+             - {{ dashboard_domain }} -> {{ ansible_default_ipv4.address }}
+             - {{ test_service_domain }} -> {{ ansible_default_ipv4.address }}
+          2. Wait 1-2 minutes for SSL certificates to be issued
+          
+          Troubleshooting:
+          - Check logs: docker logs {{ traefik_container_name }}
+          - Verify network: docker network inspect {{ traefik_network }}
+          - Test locally: curl -H "Host: {{ dashboard_domain }}"
+          ==========================================
