@@ -1,0 +1,6 @@
+name,topology,encryption,compression,atime,checksum,dedup,recordsize
+tank,raidz2:sda,sdb,sdc,sdd,false,lz4,on,sha256,off,128K
+backup,mirror:sde,sdf,true,gzip,off,sha512,off,1M
+fast,raidz1:nvme0n1,nvme1n1,nvme2n1,false,lz4,on,blake3,off,64K
+secure,mirror:sdg,sdh,passphrase:MySecurePassphrase123,zstd,off,sha256,off,128K
+mixed,raidz2:sdi,sdj,sdk,sdl mirror:sdm,sdn,false,lz4,on,sha256,off,128K

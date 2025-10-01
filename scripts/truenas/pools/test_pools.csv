@@ -1,0 +1,3 @@
+name,topology,encryption,compression,atime,checksum,dedup,recordsize
+testpool,mirror:sda,sdb,false,lz4,on,sha256,off,128K
+simplepool,sdc,sdd,sde,false,,,,,
