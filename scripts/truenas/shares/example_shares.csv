@@ -1,0 +1,8 @@
+type,name,path,comment,enabled,browsable,recyclable,guestok,aapl_name_mangling,aapl_extensions,aapl_metadata,shadowcopy,ro,maproot,mapall,security,networks,hosts,alldirs,quiet
+smb,media-share,/mnt/tank/media,Media files for streaming,true,true,false,false,true,true,true,true,false,,,,,,,
+smb,documents,/mnt/tank/documents,Document storage,true,true,true,false,false,false,false,false,false,,,,,,,
+smb,public,/mnt/tank/public,Public shared folder,true,true,false,true,false,false,false,false,false,,,,,,,
+nfs,backup-nfs,/mnt/tank/backup,Backup storage via NFS,true,,,,,,,,true,root,nobody,,,192.168.1.0/24,server.local,false,false
+nfs,media-ro,/mnt/tank/media,Read-only media access,true,,,,,,,,true,root,nobody,,,192.168.1.100 192.168.1.101,,true,true
+smb,applications,/mnt/tank/applications,Application data,true,false,true,false,false,false,false,true,false,,,,,,,
+nfs,logs,/mnt/tank/logs,System logs via NFS,true,,,,,,,,false,nobody,nobody,,,192.168.0.0/16,,false,false
