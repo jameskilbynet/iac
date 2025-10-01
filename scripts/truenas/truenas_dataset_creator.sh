@@ -76,6 +76,13 @@ CSV FORMAT:
                      reservation, refreservation, recordsize, case_sensitivity, 
                      atime, exec
     
+    SIZE FORMATS:
+    Quota/reservation fields support human-readable sizes:
+    - Raw bytes: 1073741824
+    - With units: 1GB, 500MB, 2.5TB, 100KB
+    - Case insensitive: 1gb, 500mb, 2.5tb, 100kb
+    - Use NONE for unlimited
+    
     Child datasets: Use forward slashes in name column for nested datasets
     Example: "applications/web" creates tank/applications/web
 
@@ -363,6 +370,76 @@ ensure_parent_datasets() {
     done
 }
 
+# Function to convert human-readable sizes to bytes
+convert_size_to_bytes() {
+    local size="$1"
+    local bytes
+    
+    # Remove any whitespace and convert to uppercase
+    size=$(echo "$size" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+    
+    # Handle NONE/none case
+    if [ "$size" = "NONE" ] || [ "$size" = "NONE" ] || [ -z "$size" ]; then
+        echo "NONE"
+        return 0
+    fi
+    
+    # If it's already a number (bytes), return as-is
+    if [[ "$size" =~ ^[0-9]+$ ]]; then
+        echo "$size"
+        return 0
+    fi
+    
+    # Extract number and unit
+    local number unit
+    if [[ "$size" =~ ^([0-9]+\.?[0-9]*)([KMGTPEZY]?B?)$ ]]; then
+        number="${BASH_REMATCH[1]}"
+        unit="${BASH_REMATCH[2]}"
+    else
+        log_error "Invalid size format: $size. Use formats like: 100MB, 1.5GB, 2TB, etc."
+        return 1
+    fi
+    
+    # Convert based on unit (case-insensitive)
+    case "$unit" in
+        "B"|"")
+            bytes="$number"
+            ;;
+        "KB"|"K")
+            bytes=$(echo "$number * 1024" | bc -l)
+            ;;
+        "MB"|"M")
+            bytes=$(echo "$number * 1024 * 1024" | bc -l)
+            ;;
+        "GB"|"G")
+            bytes=$(echo "$number * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        "TB"|"T")
+            bytes=$(echo "$number * 1024 * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        "PB"|"P")
+            bytes=$(echo "$number * 1024 * 1024 * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        "EB"|"E")
+            bytes=$(echo "$number * 1024 * 1024 * 1024 * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        "ZB"|"Z")
+            bytes=$(echo "$number * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        "YB"|"Y")
+            bytes=$(echo "$number * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024" | bc -l)
+            ;;
+        *)
+            log_error "Unsupported size unit: $unit. Supported units: B, KB, MB, GB, TB, PB, EB, ZB, YB"
+            return 1
+            ;;
+    esac
+    
+    # Convert to integer (remove decimal places)
+    bytes=$(echo "$bytes / 1" | bc)
+    echo "$bytes"
+}
+
 # Function to build JSON configuration from CSV row
 build_dataset_config() {
     local name="$1"
@@ -402,18 +479,34 @@ build_dataset_config() {
     [ -n "$recordsize" ] && json="$json,\"recordsize\":\"$recordsize\""
     [ -n "$case_sensitivity" ] && json="$json,\"casesensitivity\":\"$(echo "$case_sensitivity" | tr '[:lower:]' '[:upper:]')\""
 
-    # Handle numeric fields
-    if [ -n "$quota" ] && [ "$quota" != "NONE" ] && [ "$quota" != "none" ]; then
-        json="$json,\"quota\":$quota"
+    # Handle size fields (convert human-readable sizes to bytes)
+    if [ -n "$quota" ]; then
+        local quota_bytes
+        quota_bytes=$(convert_size_to_bytes "$quota")
+        if [ "$quota_bytes" != "NONE" ]; then
+            json="$json,\"quota\":$quota_bytes"
+        fi
     fi
-    if [ -n "$refquota" ] && [ "$refquota" != "NONE" ] && [ "$refquota" != "none" ]; then
-        json="$json,\"refquota\":$refquota"
+    if [ -n "$refquota" ]; then
+        local refquota_bytes
+        refquota_bytes=$(convert_size_to_bytes "$refquota")
+        if [ "$refquota_bytes" != "NONE" ]; then
+            json="$json,\"refquota\":$refquota_bytes"
+        fi
     fi
-    if [ -n "$reservation" ] && [ "$reservation" != "NONE" ] && [ "$reservation" != "none" ]; then
-        json="$json,\"reservation\":$reservation"
+    if [ -n "$reservation" ]; then
+        local reservation_bytes
+        reservation_bytes=$(convert_size_to_bytes "$reservation")
+        if [ "$reservation_bytes" != "NONE" ]; then
+            json="$json,\"reservation\":$reservation_bytes"
+        fi
     fi
-    if [ -n "$refreservation" ] && [ "$refreservation" != "NONE" ] && [ "$refreservation" != "none" ]; then
-        json="$json,\"refreservation\":$refreservation"
+    if [ -n "$refreservation" ]; then
+        local refreservation_bytes
+        refreservation_bytes=$(convert_size_to_bytes "$refreservation")
+        if [ "$refreservation_bytes" != "NONE" ]; then
+            json="$json,\"refreservation\":$refreservation_bytes"
+        fi
     fi
 
     # Handle boolean fields (convert to string format)
