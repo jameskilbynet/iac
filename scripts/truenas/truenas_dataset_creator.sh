@@ -74,7 +74,8 @@ CSV FORMAT:
     Required columns: name, pool
     Optional columns: comments, compression, deduplication, quota, refquota, 
                      reservation, refreservation, recordsize, case_sensitivity, 
-                     atime, exec
+                     atime, exec, encryption, encryption_passphrase, 
+                     encryption_algorithm, encryption_key_format
     
     SIZE FORMATS:
     Quota/reservation fields support human-readable sizes:
@@ -82,6 +83,12 @@ CSV FORMAT:
     - With units: 1GB, 500MB, 2.5TB, 100KB
     - Case insensitive: 1gb, 500mb, 2.5tb, 100kb
     - Use NONE for unlimited
+    
+    ENCRYPTION FORMATS:
+    - encryption: true/false or on/off (enable/disable encryption)
+    - encryption_passphrase: passphrase for encryption (optional, auto-generates key if not provided)
+    - encryption_algorithm: (optional, defaults to AES-256-GCM)
+    - encryption_key_format: (optional, auto-determined based on passphrase presence)
     
     Child datasets: Use forward slashes in name column for nested datasets
     Example: "applications/web" creates tank/applications/web
@@ -455,6 +462,10 @@ build_dataset_config() {
     local case_sensitivity="${11:-}"
     local atime="${12:-}"
     local exec="${13:-}"
+    local encryption="${14:-}"
+    local encryption_passphrase="${15:-}"
+    local encryption_algorithm="${16:-}"
+    local encryption_key_format="${17:-}"
 
     # Handle child datasets - name can contain slashes for nested paths
     local full_path
@@ -522,6 +533,34 @@ build_dataset_config() {
             json="$json,\"exec\":\"ON\""
         else
             json="$json,\"exec\":\"OFF\""
+        fi
+    fi
+
+    # Handle encryption fields
+    if [ -n "$encryption" ]; then
+        local enable_encryption=false
+        if [ "$encryption" = "true" ] || [ "$encryption" = "TRUE" ] || [ "$encryption" = "on" ] || [ "$encryption" = "ON" ]; then
+            enable_encryption=true
+        fi
+        
+        if [ "$enable_encryption" = true ]; then
+            json="$json,\"encryption\":true,\"inherit_encryption\":false"
+            
+            # Build encryption options
+            local encryption_options
+            
+            # Handle passphrase
+            if [ -n "$encryption_passphrase" ]; then
+                encryption_options="{\"passphrase\":\"$encryption_passphrase\"}"
+                log_debug "Using passphrase-based encryption"
+            else
+                # Auto-generate key if no passphrase provided
+                encryption_options="{\"generate_key\":true}"
+                log_debug "Using auto-generated key encryption"
+            fi
+            
+            # Add encryption options to JSON
+            json="$json,\"encryption_options\":$encryption_options"
         fi
     fi
 
@@ -609,7 +648,7 @@ process_csv_file() {
     local total_count=0
 
     # Skip header line and process each data row in hierarchical order
-    while IFS=',' read -r name pool comments compression deduplication quota refquota reservation refreservation recordsize case_sensitivity atime exec _; do
+    while IFS=',' read -r name pool comments compression deduplication quota refquota reservation refreservation recordsize case_sensitivity atime exec encryption encryption_passphrase encryption_algorithm encryption_key_format _; do
         # Remove quotes if present
         name=$(echo "$name" | sed 's/^"//; s/"$//')
         pool=$(echo "$pool" | sed 's/^"//; s/"$//')
@@ -655,7 +694,7 @@ process_csv_file() {
 
         # Build configuration
         local config
-        config=$(build_dataset_config "$name" "$pool" "$comments" "$compression" "$deduplication" "$quota" "$refquota" "$reservation" "$refreservation" "$recordsize" "$case_sensitivity" "$atime" "$exec")
+        config=$(build_dataset_config "$name" "$pool" "$comments" "$compression" "$deduplication" "$quota" "$refquota" "$reservation" "$refreservation" "$recordsize" "$case_sensitivity" "$atime" "$exec" "$encryption" "$encryption_passphrase" "$encryption_algorithm" "$encryption_key_format")
 
         if [ "$DRY_RUN" = true ]; then
             log_info "[DRY RUN] Would create dataset with config:"

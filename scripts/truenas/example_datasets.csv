@@ -1,22 +1,25 @@
-name,pool,comments,compression,deduplication,quota,refquota,reservation,refreservation,recordsize,case_sensitivity,atime,exec
-applications,tank,Applications and software,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
-applications/web,tank,Web applications,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
-applications/web/nginx,tank,Nginx web server,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
-applications/api,tank,API services,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
-backup,tank,Backup storage area,gzip,off,500000000000,NONE,NONE,NONE,1M,insensitive,off,off
-backup/daily,tank,Daily backups,gzip,off,NONE,NONE,NONE,NONE,1M,insensitive,off,off
-backup/weekly,tank,Weekly backups,gzip,off,NONE,NONE,NONE,NONE,1M,insensitive,off,off
-media,tank,Media files and streaming,lz4,off,NONE,NONE,100000000000,NONE,1M,insensitive,off,on
-media/movies,tank,Movie collection,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
-media/tv,tank,TV shows,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
-media/music,tank,Music library,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
-documents,tank,Document storage,lz4,off,NONE,50000000000,NONE,NONE,128K,sensitive,on,on
-documents/personal,tank,Personal documents,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,on,on
-documents/work,tank,Work documents,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,on,on
-databases,tank,Database storage,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
-databases/mysql,tank,MySQL databases,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
-databases/postgres,tank,PostgreSQL databases,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
-logs,tank,System and application logs,gzip,off,10000000000,NONE,NONE,NONE,128K,insensitive,off,on
-logs/system,tank,System logs,gzip,off,NONE,NONE,NONE,NONE,128K,insensitive,off,on
-logs/applications,tank,Application logs,gzip,off,NONE,NONE,NONE,NONE,128K,insensitive,off,on
-temp,tank,Temporary storage,lz4,off,50000000000,NONE,NONE,NONE,128K,insensitive,off,on
+name,pool,comments,compression,deduplication,quota,refquota,reservation,refreservation,recordsize,case_sensitivity,atime,exec,encryption,encryption_passphrase,encryption_algorithm,encryption_key_format
+applications,tank,Applications and software,lz4,off,500GB,400GB,50GB,25GB,128K,sensitive,off,on,false,,,
+applications/web,tank,Web applications,lz4,off,100GB,80GB,10GB,5GB,128K,sensitive,off,on,false,,,
+applications/web/nginx,tank,Nginx web server,lz4,off,20GB,NONE,2GB,NONE,128K,sensitive,off,on,false,,,
+applications/api,tank,API services,lz4,off,50GB,40GB,5GB,2GB,128K,sensitive,off,on,true,APISecret2024,,
+secure,tank,Secure encrypted storage,lz4,off,1TB,800GB,100GB,50GB,128K,sensitive,off,on,true,SecureRoot123,,
+secure/documents,tank,Encrypted documents,lz4,off,200GB,NONE,20GB,NONE,128K,sensitive,on,on,true,,,
+secure/financial,tank,Financial records,gzip,off,100GB,NONE,10GB,NONE,128K,sensitive,off,on,true,Finance2024!,,
+backup,tank,Backup storage area,gzip,off,500GB,NONE,50GB,NONE,1M,insensitive,off,off,false,,,
+backup/daily,tank,Daily backups,gzip,off,200GB,NONE,20GB,NONE,1M,insensitive,off,off,false,,,
+backup/weekly,tank,Weekly backups,gzip,off,300GB,NONE,30GB,NONE,1M,insensitive,off,off,false,,,
+media,tank,Media files and streaming,lz4,off,10TB,NONE,1TB,NONE,1M,insensitive,off,on,false,,,
+media/movies,tank,Movie collection,lz4,off,5TB,NONE,500GB,NONE,1M,insensitive,off,on,false,,,
+media/tv,tank,TV shows,lz4,off,3TB,NONE,300GB,NONE,1M,insensitive,off,on,false,,,
+media/music,tank,Music library,lz4,off,2TB,NONE,200GB,NONE,128K,insensitive,off,on,false,,,
+documents,tank,Document storage,lz4,off,200GB,150GB,20GB,10GB,128K,sensitive,on,on,false,,,
+documents/personal,tank,Personal documents,lz4,off,50GB,NONE,5GB,NONE,128K,sensitive,on,on,false,,,
+documents/work,tank,Work documents,lz4,off,100GB,80GB,10GB,5GB,128K,sensitive,on,on,true,WorkDocs2024,,
+databases,tank,Database storage,lz4,off,500GB,400GB,50GB,25GB,8K,sensitive,off,on,false,,,
+databases/mysql,tank,MySQL databases,lz4,off,200GB,NONE,20GB,NONE,8K,sensitive,off,on,false,,,
+databases/postgres,tank,PostgreSQL databases,lz4,off,300GB,NONE,30GB,NONE,8K,sensitive,off,on,false,,,
+logs,tank,System and application logs,gzip,off,50GB,NONE,5GB,NONE,128K,insensitive,off,on,false,,,
+logs/system,tank,System logs,gzip,off,20GB,NONE,2GB,NONE,128K,insensitive,off,on,false,,,
+logs/applications,tank,Application logs,gzip,off,30GB,NONE,3GB,NONE,128K,insensitive,off,on,false,,,
+temp,tank,Temporary storage,lz4,off,100GB,50GB,NONE,NONE,128K,insensitive,off,on,false,,,
