@@ -1,0 +1,4 @@
+name,pool,comments,compression,deduplication,quota,refquota,reservation,refreservation,recordsize,case_sensitivity,atime,exec
+test_apps,pool1,Test application data,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
+test_media,pool1,Test media storage,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
+test_apps/web,pool1,Test web application data,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on

@@ -41,3 +41,5 @@ terraform/VM/VMCLogs/.terraform.lock.hcl
 .vscode/settings.json
 ansible/.DS_Store
 ansible/portainer/.env
+WARP.md
+scripts/truenas/config.env

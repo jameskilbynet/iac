@@ -1,0 +1,22 @@
+name,pool,comments,compression,deduplication,quota,refquota,reservation,refreservation,recordsize,case_sensitivity,atime,exec
+applications,tank,Applications and software,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
+applications/web,tank,Web applications,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
+applications/web/nginx,tank,Nginx web server,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
+applications/api,tank,API services,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,off,on
+backup,tank,Backup storage area,gzip,off,500000000000,NONE,NONE,NONE,1M,insensitive,off,off
+backup/daily,tank,Daily backups,gzip,off,NONE,NONE,NONE,NONE,1M,insensitive,off,off
+backup/weekly,tank,Weekly backups,gzip,off,NONE,NONE,NONE,NONE,1M,insensitive,off,off
+media,tank,Media files and streaming,lz4,off,NONE,NONE,100000000000,NONE,1M,insensitive,off,on
+media/movies,tank,Movie collection,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
+media/tv,tank,TV shows,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
+media/music,tank,Music library,lz4,off,NONE,NONE,NONE,NONE,1M,insensitive,off,on
+documents,tank,Document storage,lz4,off,NONE,50000000000,NONE,NONE,128K,sensitive,on,on
+documents/personal,tank,Personal documents,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,on,on
+documents/work,tank,Work documents,lz4,off,NONE,NONE,NONE,NONE,128K,sensitive,on,on
+databases,tank,Database storage,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
+databases/mysql,tank,MySQL databases,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
+databases/postgres,tank,PostgreSQL databases,lz4,off,NONE,NONE,NONE,NONE,8K,sensitive,off,on
+logs,tank,System and application logs,gzip,off,10000000000,NONE,NONE,NONE,128K,insensitive,off,on
+logs/system,tank,System logs,gzip,off,NONE,NONE,NONE,NONE,128K,insensitive,off,on
+logs/applications,tank,Application logs,gzip,off,NONE,NONE,NONE,NONE,128K,insensitive,off,on
+temp,tank,Temporary storage,lz4,off,50000000000,NONE,NONE,NONE,128K,insensitive,off,on
