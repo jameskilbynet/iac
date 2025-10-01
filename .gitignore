@@ -44,3 +44,5 @@ ansible/portainer/.env
 WARP.md
 scripts/truenas/datasets/config.env
 scripts/truenas/datasets/datasets.csv
+scripts/truenas/shares/config.env
+scripts/truenas/shares/shares.csv
