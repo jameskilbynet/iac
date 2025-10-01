@@ -42,5 +42,5 @@ terraform/VM/VMCLogs/.terraform.lock.hcl
 ansible/.DS_Store
 ansible/portainer/.env
 WARP.md
-scripts/truenas/config.env
-scripts/truenas/datasets.csv
+scripts/truenas/datasets/config.env
+scripts/truenas/datasets/datasets.csv
