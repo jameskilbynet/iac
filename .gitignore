@@ -43,3 +43,4 @@ ansible/.DS_Store
 ansible/portainer/.env
 WARP.md
 scripts/truenas/config.env
+scripts/truenas/datasets.csv
