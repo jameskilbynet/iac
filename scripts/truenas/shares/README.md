@@ -223,7 +223,69 @@ curl -H "Authorization: Bearer YOUR_API_KEY" https://your-truenas-ip/api/v2.0/sy
 ## Related Scripts
 
 - **Dataset Creator**: `../datasets/truenas_dataset_creator.sh` - Create datasets before sharing
-- **Share Deleter**: Create shares first, then manage them through the TrueNAS UI or additional scripts
+- **Share Deleter**: `truenas_share_deleter.sh` - Remove SMB and NFS shares in bulk or individually
+
+## Share Deletion
+
+The `truenas_share_deleter.sh` script provides comprehensive share removal capabilities:
+
+### Deletion Methods
+
+1. **Bulk Deletion from CSV**:
+```bash
+# Preview deletions first
+./truenas_share_deleter.sh --dry-run example_delete_shares.csv
+
+# Delete shares (with confirmation prompts)
+./truenas_share_deleter.sh example_delete_shares.csv
+
+# Force delete without prompts (use with caution)
+./truenas_share_deleter.sh --force delete_shares.csv
+```
+
+2. **Individual Share Deletion**:
+```bash
+# Delete SMB share by name
+./truenas_share_deleter.sh --name "old-share" --type smb
+
+# Delete NFS share by path
+./truenas_share_deleter.sh --path "/mnt/tank/old-data" --type nfs
+
+# Force delete without confirmation
+./truenas_share_deleter.sh --force --name "temp-share" --type smb
+```
+
+3. **List Existing Shares**:
+```bash
+# List all SMB shares
+./truenas_share_deleter.sh --type smb --list
+
+# List all NFS shares  
+./truenas_share_deleter.sh --type nfs --list
+```
+
+### Deletion CSV Format
+
+For bulk deletion, create a CSV with these columns:
+- `type`: "smb" or "nfs"
+- `identifier`: Share name (for SMB) or path (for NFS)
+- `comment`: Optional description
+
+```csv
+type,identifier,comment
+smb,old-media,Old media share to remove
+smb,temp-docs,Temporary documents
+nfs,/mnt/tank/old-backup,Old backup location
+nfs,/mnt/tank/temp,Temporary NFS export
+```
+
+### Safety Features
+
+- **Dry Run Mode**: Preview what will be deleted
+- **Confirmation Prompts**: Interactive confirmation for each share
+- **Force Mode**: Skip confirmations for automated workflows
+- **Share Validation**: Ensures shares exist before attempting deletion
+- **Detailed Logging**: Shows exactly what was deleted or skipped
 
 ## Contributing
 
