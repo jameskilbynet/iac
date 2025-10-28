@@ -1,6 +1,0 @@
-username,full_name,email,primary_group
-jdoe,John Doe,jdoe@company.com,users
-jane.smith,Jane Smith,jane.smith@company.com,staff
-mike.jones,Mike Jones,mike.jones@company.com,users
-admin.user,Admin User,admin@company.com,wheel
-guest.user,Guest User,guest@company.com,guests

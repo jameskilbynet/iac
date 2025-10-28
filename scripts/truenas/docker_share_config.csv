@@ -1,0 +1,82 @@
+dataset,share_name,description,sync,recordsize,compression,atime,acl_type,owner,group,permissions
+docker/paperless-ngx/data,paperless-ngx-data,Paperless-ngx document storage,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/paperless-ngx/db,paperless-ngx-db,Paperless-ngx database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/paperless-ngx/media,paperless-ngx-media,Paperless-ngx media files and thumbnails,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/paperless-ngx/export,paperless-ngx-export,Paperless-ngx document exports,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/paperless-ngx/consume,paperless-ngx-consume,Paperless-ngx document intake directory,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/appdata,docker-appdata,General Docker application data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/config,docker-config,Docker container configuration files,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/logs,docker-logs,Docker container logs,standard,128K,lz4,off,POSIX,1000,1000,755
+docker/portainer/data,portainer-data,Portainer persistent data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/ollama/models,ollama-models,Ollama LLM models storage,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/ollama/data,ollama-data,Ollama application data and config,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/openwebui/data,openwebui-data,Open WebUI application data and uploads,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/openwebui/db,openwebui-db,Open WebUI database (SQLite),standard,16K,lz4,off,POSIX,1000,1000,770
+docker/grafana/data,grafana-data,Grafana dashboards and configuration,standard,128K,lz4,off,POSIX,472,472,770
+docker/grafana/db,grafana-db,Grafana database (SQLite),standard,16K,lz4,off,POSIX,472,472,770
+docker/prometheus/data,prometheus-data,Prometheus time-series database,standard,16K,lz4,off,POSIX,65534,65534,770
+docker/prometheus/config,prometheus-config,Prometheus configuration files,standard,16K,lz4,off,POSIX,65534,65534,770
+docker/searxng/data,searxng-data,SearXNG application data,standard,128K,lz4,off,POSIX,977,977,770
+docker/searxng/config,searxng-config,SearXNG configuration files,standard,16K,lz4,off,POSIX,977,977,770
+docker/immich/upload,immich-upload,Immich photo and video uploads,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/immich/library,immich-library,Immich processed library storage,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/immich/db,immich-db,Immich database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/immich/model-cache,immich-model-cache,Immich ML model cache,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/excalidraw/data,excalidraw-data,Excalidraw application data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/wordpress/content,wordpress-content,WordPress wp-content directory,standard,128K,lz4,off,POSIX,33,33,770
+docker/wordpress/db,wordpress-db,WordPress database (MySQL/MariaDB),standard,16K,lz4,off,POSIX,999,999,770
+docker/wordpress/config,wordpress-config,WordPress configuration files,standard,16K,lz4,off,POSIX,33,33,770
+docker/plex/config,plex-config,Plex Media Server configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/plex/transcode,plex-transcode,Plex transcode temporary files,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/plex/db,plex-db,Plex metadata database,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/tautulli/config,tautulli-config,Tautulli configuration and logs,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/tautulli/db,tautulli-db,Tautulli database (SQLite),standard,16K,lz4,off,POSIX,1000,1000,770
+docker/n8n/storage,n8n-storage,n8n workflow data and credentials,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/n8n/db,n8n-db,n8n database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/n8n/qdrant,n8n-qdrant,Qdrant vector database storage,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/n8n/redis,n8n-redis,Valkey/Redis cache data,standard,16K,lz4,off,POSIX,999,999,770
+docker/langfuse/minio,langfuse-minio,Langfuse MinIO S3 storage,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/langfuse/clickhouse-data,langfuse-clickhouse-data,Langfuse ClickHouse database,standard,16K,lz4,off,POSIX,101,101,770
+docker/langfuse/clickhouse-logs,langfuse-clickhouse-logs,Langfuse ClickHouse logs,standard,128K,lz4,off,POSIX,101,101,770
+docker/airtrail/db,airtrail-db,Airtrail database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/aistack/ollama,aistack-ollama,AIStack Ollama models and data,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/aistack/models,aistack-models,AIStack shared AI models,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/aistack/openwebui,aistack-openwebui,AIStack Open WebUI data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/aistack/searxng,aistack-searxng,AIStack SearXNG config,standard,128K,lz4,off,POSIX,977,977,770
+docker/aistack/jaeger,aistack-jaeger,AIStack Jaeger tracing data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/aistack/prometheus,aistack-prometheus,AIStack Prometheus metrics,standard,16K,lz4,off,POSIX,65534,65534,770
+docker/aistack/grafana,aistack-grafana,AIStack Grafana dashboards,standard,128K,lz4,off,POSIX,472,472,770
+docker/stash/config,stash-config,Stash configuration files,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/stash/data,stash-data,Stash media library data,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/stash/metadata,stash-metadata,Stash metadata and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/stash/cache,stash-cache,Stash cache files,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/stash/generated,stash-generated,Stash generated thumbnails and previews,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/stash/blobs,stash-blobs,Stash blob storage,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/stash/backups,stash-backups,Stash backup files,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/radarr/config,radarr-config,Radarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/sonarr/config,sonarr-config,Sonarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/lidarr/config,lidarr-config,Lidarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/prowlarr/config,prowlarr-config,Prowlarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/bazarr/config,bazarr-config,Bazarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/qbittorrent/config,qbittorrent-config,qBittorrent configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/nextcloud/data,nextcloud-data,Nextcloud application files,standard,128K,lz4,off,POSIX,33,33,770
+docker/nextcloud/config,nextcloud-config,Nextcloud configuration,standard,16K,lz4,off,POSIX,33,33,770
+docker/nextcloud/apps,nextcloud-apps,Nextcloud custom apps,standard,128K,lz4,off,POSIX,33,33,770
+docker/nextcloud/db,nextcloud-db,Nextcloud database (MariaDB),standard,16K,lz4,off,POSIX,999,999,770
+docker/nextcloud/redis,nextcloud-redis,Nextcloud Redis cache,standard,16K,lz4,off,POSIX,999,999,770
+docker/ghostfolio/db,ghostfolio-db,Ghostfolio database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/hoarder/data,hoarder-data,Hoarder application data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/hoarder/meilisearch,hoarder-meilisearch,Hoarder search index,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/semaphore/data,semaphore-data,Semaphore data and tasks,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/semaphore/config,semaphore-config,Semaphore configuration,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/semaphore/tmp,semaphore-tmp,Semaphore temporary files,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/uptimekuma/data,uptimekuma-data,Uptime Kuma monitoring data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/unifi/config,unifi-config,UniFi Controller configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/netbox/media,netbox-media,Netbox uploaded media,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/netbox/db,netbox-db,Netbox database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/postiz/config,postiz-config,Postiz configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/postiz/uploads,postiz-uploads,Postiz uploaded media,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/postiz/db,postiz-db,Postiz database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/postiz/redis,postiz-redis,Postiz Redis cache,standard,16K,lz4,off,POSIX,999,999,770
+docker/scrutiny/config,scrutiny-config,Scrutiny configuration and database,standard,128K,lz4,off,POSIX,3000,3000,770
+docker/beszel/data,beszel-data,Beszel monitoring data,standard,128K,lz4,off,POSIX,1000,1000,770

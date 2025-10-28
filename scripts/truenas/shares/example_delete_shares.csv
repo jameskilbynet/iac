@@ -1,7 +1,0 @@
-type,identifier,comment
-smb,old-media,Old media share to be removed
-smb,temp-docs,Temporary documents share
-smb,test-share,Test share for development
-nfs,/mnt/tank/old-backup,Old backup location via NFS
-nfs,/mnt/tank/temp,Temporary NFS share
-nfs,/mnt/tank/dev-exports,Development exports to clean up
