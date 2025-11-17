@@ -1,0 +1,107 @@
+---
+- name: Install Packer and Requirements for VMware vSphere
+  hosts: all
+  become: true
+  vars:
+    gomplate_version: "4.3.0"
+    gomplate_arch: "linux-amd64"
+  
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install prerequisite packages
+      ansible.builtin.apt:
+        name:
+          - software-properties-common
+          - wget
+          - gnupg
+          - lsb-release
+          - curl
+        state: present
+
+    - name: Download HashiCorp GPG key
+      ansible.builtin.get_url:
+        url: https://apt.releases.hashicorp.com/gpg
+        dest: /tmp/hashicorp.gpg
+        mode: '0644'
+
+    - name: Add HashiCorp GPG key to keyring
+      ansible.builtin.shell: |
+        gpg --dearmor < /tmp/hashicorp.gpg > /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+    - name: Add HashiCorp repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+        state: present
+        filename: hashicorp
+
+    - name: Add Ansible PPA
+      ansible.builtin.apt_repository:
+        repo: ppa:ansible/ansible
+        state: present
+        update_cache: yes
+
+    - name: Install Packer from HashiCorp repository
+      ansible.builtin.apt:
+        name: packer
+        state: present
+        update_cache: yes
+
+    - name: Install additional required packages
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - ansible
+          - git
+          - jq
+          - xorriso
+          - whois
+          - unzip
+          - terraform
+        state: present
+
+    - name: Check if gomplate is already installed
+      ansible.builtin.stat:
+        path: /usr/local/bin/gomplate
+      register: gomplate_stat
+
+    - name: Get installed gomplate version if exists
+      ansible.builtin.command: /usr/local/bin/gomplate --version
+      register: gomplate_version_check
+      when: gomplate_stat.stat.exists
+      changed_when: false
+      failed_when: false
+
+    - name: Download gomplate
+      ansible.builtin.get_url:
+        url: "https://github.com/hairyhenderson/gomplate/releases/download/v{{ gomplate_version }}/gomplate_{{ gomplate_arch }}"
+        dest: /tmp/gomplate
+        mode: '0755'
+      when: not gomplate_stat.stat.exists or gomplate_version not in gomplate_version_check.stdout | default('')
+
+    - name: Install gomplate
+      ansible.builtin.copy:
+        src: /tmp/gomplate
+        dest: /usr/local/bin/gomplate
+        mode: '0755'
+        remote_src: yes
+      when: not gomplate_stat.stat.exists or gomplate_version not in gomplate_version_check.stdout | default('')
+
+    - name: Initialize Packer plugins
+      ansible.builtin.command: packer init -upgrade /dev/null
+      environment:
+        PACKER_CONFIG_DIR: "{{ ansible_env.HOME }}/.config/packer"
+      become: false
+      changed_when: false
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Verify installations
+      ansible.builtin.debug:
+        msg: "Installation complete. Verify with: packer version, ansible --version, git --version, gomplate --version, jq --version, terraform --version"
