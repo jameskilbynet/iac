@@ -1,0 +1,153 @@
+---
+- name: Create TrueNAS Datasets from CSV
+  hosts: localhost
+  gather_facts: false
+  vars:
+    truenas_host: "{{ lookup('env', 'TRUENAS_HOST') }}"
+    truenas_api_key: "{{ lookup('env', 'TRUENAS_API_KEY') }}"
+    truenas_pool: "{{ lookup('env', 'TRUENAS_POOL') | default('tank', true) }}"
+    csv_file: "{{ csv_file_path | default('docker_share_config.csv') }}"
+    truenas_api_url: "https://{{ truenas_host }}/api/v2.0"
+    validate_certs: false
+
+  tasks:
+    - name: Verify required environment variables
+      ansible.builtin.assert:
+        that:
+          - truenas_host is defined
+          - truenas_host | length > 0
+          - truenas_api_key is defined
+          - truenas_api_key | length > 0
+        fail_msg: "TRUENAS_HOST and TRUENAS_API_KEY environment variables must be set"
+
+    - name: Read CSV file
+      ansible.builtin.read_csv:
+        path: "{{ csv_file }}"
+        delimiter: ","
+      register: dataset_config
+
+    - name: Display datasets to be created
+      ansible.builtin.debug:
+        msg: "Will create dataset: {{ truenas_pool }}/{{ item.dataset }} ({{ item.description }})"
+      loop: "{{ dataset_config.list }}"
+      loop_control:
+        label: "{{ item.dataset }}"
+
+    - name: Test TrueNAS API connectivity
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/system/info"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+        validate_certs: "{{ validate_certs }}"
+        status_code: 200
+      register: system_info
+
+    - name: Display TrueNAS system info
+      ansible.builtin.debug:
+        msg: "Connected to TrueNAS {{ system_info.json.version }} ({{ system_info.json.hostname }})"
+
+    - name: Get existing datasets
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/pool/dataset"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+        validate_certs: "{{ validate_certs }}"
+        status_code: 200
+      register: existing_datasets
+
+    - name: Build list of all parent paths
+      ansible.builtin.set_fact:
+        all_parent_paths: "{{ all_parent_paths | default([]) + [item.dataset.split('/')[:-1] | join('/')] }}"
+      loop: "{{ dataset_config.list }}"
+      when: item.dataset.split('/') | length > 1
+
+    - name: Create unique sorted parent paths by depth
+      ansible.builtin.set_fact:
+        unique_parents: "{{ (all_parent_paths | default([]) | unique | list | sort) if all_parent_paths is defined else [] }}"
+
+    - name: Create parent datasets
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/pool/dataset"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          name: "{{ truenas_pool }}/{{ item }}"
+          type: "FILESYSTEM"
+        validate_certs: "{{ validate_certs }}"
+        status_code: 200
+      register: parent_creation
+      loop: "{{ unique_parents }}"
+      when: 
+        - item != ''
+        - "(truenas_pool ~ '/' ~ item) not in existing_datasets.json | map(attribute='id') | list"
+      ignore_errors: true
+
+    - name: Refresh existing datasets after parent creation
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/pool/dataset"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+        validate_certs: "{{ validate_certs }}"
+        status_code: 200
+      register: existing_datasets
+
+    - name: Create datasets
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/pool/dataset"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          name: "{{ truenas_pool }}/{{ item.dataset }}"
+          type: "FILESYSTEM"
+          sync: "{{ item.sync | upper }}"
+          recordsize: "{{ item.recordsize }}"
+          compression: "{{ item.compression | upper }}"
+          atime: "{{ item.atime | upper }}"
+          acltype: "{{ item.acl_type | upper }}"
+        validate_certs: "{{ validate_certs }}"
+        status_code: 200
+      register: dataset_creation
+      loop: "{{ dataset_config.list | sort(attribute='dataset') }}"
+      loop_control:
+        label: "{{ truenas_pool }}/{{ item.dataset }}"
+      when: "(truenas_pool ~ '/' ~ item.dataset) not in existing_datasets.json | map(attribute='id') | list"
+      ignore_errors: true
+
+    - name: Set dataset permissions
+      ansible.builtin.uri:
+        url: "{{ truenas_api_url }}/pool/dataset/id/{{ truenas_pool | urlencode }}%2F{{ item.dataset | replace('/', '%2F') }}/permission"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          mode: "{{ item.permissions }}"
+          user: "{{ item.owner }}"
+          group: "{{ item.group }}"
+          options:
+            recursive: false
+            traverse: false
+        validate_certs: "{{ validate_certs }}"
+        status_code: [200, 201]
+      register: permission_result
+      loop: "{{ dataset_config.list }}"
+      loop_control:
+        label: "{{ truenas_pool }}/{{ item.dataset }}"
+      ignore_errors: true
+      delay: 2
+      retries: 3
+      until: permission_result is succeeded
+
+    - name: Summary of created datasets
+      ansible.builtin.debug:
+        msg: "Dataset creation completed. Check results above for any errors."

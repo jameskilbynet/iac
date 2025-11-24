@@ -46,13 +46,6 @@ docker/aistack/searxng,aistack-searxng,AIStack SearXNG config,standard,128K,lz4,
 docker/aistack/jaeger,aistack-jaeger,AIStack Jaeger tracing data,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/aistack/prometheus,aistack-prometheus,AIStack Prometheus metrics,standard,16K,lz4,off,POSIX,65534,65534,770
 docker/aistack/grafana,aistack-grafana,AIStack Grafana dashboards,standard,128K,lz4,off,POSIX,472,472,770
-docker/stash/config,stash-config,Stash configuration files,standard,16K,lz4,off,POSIX,1000,1000,770
-docker/stash/data,stash-data,Stash media library data,standard,1M,lz4,off,POSIX,1000,1000,770
-docker/stash/metadata,stash-metadata,Stash metadata and database,standard,128K,lz4,off,POSIX,1000,1000,770
-docker/stash/cache,stash-cache,Stash cache files,standard,1M,lz4,off,POSIX,1000,1000,770
-docker/stash/generated,stash-generated,Stash generated thumbnails and previews,standard,1M,lz4,off,POSIX,1000,1000,770
-docker/stash/blobs,stash-blobs,Stash blob storage,standard,1M,lz4,off,POSIX,1000,1000,770
-docker/stash/backups,stash-backups,Stash backup files,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/radarr/config,radarr-config,Radarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/sonarr/config,sonarr-config,Sonarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/lidarr/config,lidarr-config,Lidarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770

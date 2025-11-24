@@ -1,0 +1,76 @@
+---
+# Example Ansible Inventory for TrueNAS Automation
+# Copy this file to inventory.yml and customize for your environment
+#
+# Usage:
+#   ansible-playbook -i inventory.yml create_datasets.yml --limit production
+#
+
+all:
+  children:
+    truenas:
+      children:
+        production:
+          hosts:
+            truenas-prod-01:
+              ansible_host: truenas-prod.example.com
+              truenas_host: truenas-prod.example.com
+              truenas_pool: storage
+              truenas_api_key: "{{ lookup('env', 'TRUENAS_PROD_API_KEY') }}"
+            
+            truenas-prod-02:
+              ansible_host: truenas-prod-backup.example.com
+              truenas_host: truenas-prod-backup.example.com
+              truenas_pool: backup
+              truenas_api_key: "{{ lookup('env', 'TRUENAS_PROD_BACKUP_API_KEY') }}"
+        
+        staging:
+          hosts:
+            truenas-staging:
+              ansible_host: 192.168.2.100
+              truenas_host: 192.168.2.100
+              truenas_pool: tank
+              truenas_api_key: "{{ lookup('env', 'TRUENAS_STAGING_API_KEY') }}"
+        
+        development:
+          hosts:
+            truenas-dev:
+              ansible_host: 192.168.3.100
+              truenas_host: 192.168.3.100
+              truenas_pool: dev-pool
+              truenas_api_key: "{{ lookup('env', 'TRUENAS_DEV_API_KEY') }}"
+              # Override default NFS network for dev environment
+              nfs_network: 192.168.3.0/24
+      
+      vars:
+        # Common variables for all TrueNAS hosts
+        ansible_connection: local
+        validate_certs: false
+        
+        # Default NFS settings (can be overridden per host)
+        nfs_network: 192.168.1.0/24
+        nfs_maproot_user: root
+        nfs_maproot_group: wheel
+        
+        # Default share type
+        share_type: nfs
+        
+        # CSV file location
+        csv_file_path: docker_share_config.csv
+
+# Example usage commands:
+#
+# Target all production TrueNAS systems:
+#   ansible-playbook -i inventory.yml create_datasets.yml --limit production
+#
+# Target a specific host:
+#   ansible-playbook -i inventory.yml create_datasets.yml --limit truenas-prod-01
+#
+# Target all TrueNAS systems:
+#   ansible-playbook -i inventory.yml create_datasets.yml
+#
+# Create SMB shares on all production systems:
+#   ansible-playbook -i inventory.yml create_shares.yml --limit production -e "share_type=smb"
+#
+# Use different CSV file for development:
+#   ansible-playbook -i inventory.yml create_datasets.yml --limit development -e "csv_file_path=dev_datasets.csv"
