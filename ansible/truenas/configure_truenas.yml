@@ -1,0 +1,103 @@
+---
+- name: Configure TrueNAS SCALE datasets and shares
+  hosts: truenas
+  gather_facts: false
+  vars:
+    truenas_api_key: "{{ lookup('env', 'TRUENAS_API_KEY') }}"
+    truenas_base_url: "https://{{ inventory_hostname }}"
+    truenas_validate_certs: false
+    config_csv_path: "../../scripts/truenas/docker_share_config.csv"
+    parent_pool: "docker"  # Base pool name
+    
+  tasks:
+    - name: Verify API key is provided
+      ansible.builtin.fail:
+        msg: "TRUENAS_API_KEY environment variable must be set"
+      when: truenas_api_key == ""
+
+    - name: Read dataset configuration from CSV
+      ansible.builtin.read_csv:
+        path: "{{ config_csv_path }}"
+      register: dataset_config
+      delegate_to: localhost
+
+    - name: Display configuration summary
+      ansible.builtin.debug:
+        msg: "Processing {{ dataset_config.list | length }} datasets"
+
+    - name: Create datasets with properties
+      ansible.builtin.uri:
+        url: "{{ truenas_base_url }}/api/v2.0/pool/dataset"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          name: "{{ parent_pool }}/{{ item.dataset }}"
+          type: "FILESYSTEM"
+          sync: "{{ item.sync | upper }}"
+          recordsize: "{{ item.recordsize }}"
+          compression: "{{ item.compression | upper }}"
+          atime: "{{ item.atime | upper }}"
+          acltype: "{{ item.acl_type | upper }}"
+        validate_certs: "{{ truenas_validate_certs }}"
+        status_code: [200, 409]  # 409 means dataset already exists
+      loop: "{{ dataset_config.list }}"
+      register: dataset_creation
+      failed_when: 
+        - dataset_creation.status not in [200, 409]
+        - "'already exists' not in (dataset_creation.json.message | default(''))"
+
+    - name: Set dataset permissions
+      ansible.builtin.uri:
+        url: "{{ truenas_base_url }}/api/v2.0/pool/dataset/id/{{ parent_pool }}%2F{{ item.dataset | replace('/', '%2F') }}/permission"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          mode: "{{ item.permissions }}"
+          user: "{{ item.owner }}"
+          group: "{{ item.group }}"
+          options:
+            stripacl: false
+            recursive: true
+            traverse: false
+        validate_certs: "{{ truenas_validate_certs }}"
+        status_code: [200]
+      loop: "{{ dataset_config.list }}"
+      when: item.owner is defined and item.group is defined
+
+    - name: Create NFS shares (optional)
+      ansible.builtin.uri:
+        url: "{{ truenas_base_url }}/api/v2.0/sharing/nfs"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          path: "/mnt/{{ parent_pool }}/{{ item.dataset }}"
+          comment: "{{ item.description }}"
+          enabled: true
+          networks: []
+          hosts: []
+          ro: false
+          maproot_user: "root"
+          maproot_group: "root"
+          mapall_user: ""
+          mapall_group: ""
+        validate_certs: "{{ truenas_validate_certs }}"
+        status_code: [200, 409]
+      loop: "{{ dataset_config.list }}"
+      when: create_nfs_shares | default(false) | bool
+      register: nfs_creation
+      failed_when:
+        - nfs_creation.status not in [200, 409]
+        - "'already exists' not in (nfs_creation.json.message | default(''))"
+
+    - name: Configuration summary
+      ansible.builtin.debug:
+        msg: "TrueNAS configuration completed successfully"
