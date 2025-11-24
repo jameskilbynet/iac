@@ -6,15 +6,10 @@
     truenas_api_key: "{{ lookup('env', 'TRUENAS_API_KEY') }}"
     truenas_base_url: "https://{{ inventory_hostname }}"
     truenas_validate_certs: false
-    config_csv_path: "../../scripts/truenas/docker_share_config.csv"
+    config_csv_path: "docker_share_config.csv"
     parent_pool: "docker"  # Base pool name
     
   tasks:
-    - name: Verify API key is provided
-      ansible.builtin.fail:
-        msg: "TRUENAS_API_KEY environment variable must be set"
-      when: truenas_api_key == ""
-
     - name: Read dataset configuration from CSV
       ansible.builtin.read_csv:
         path: "{{ config_csv_path }}"

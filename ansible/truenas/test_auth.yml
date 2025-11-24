@@ -1,0 +1,37 @@
+---
+- name: Test TrueNAS API Authentication
+  hosts: truenas
+  gather_facts: false
+  vars:
+    truenas_api_key: "{{ lookup('env', 'TRUENAS_API_KEY') }}"
+    truenas_base_url: "https://{{ inventory_hostname }}"
+    
+  tasks:
+    - name: Display connection info
+      ansible.builtin.debug:
+        msg: 
+          - "Connecting to: {{ truenas_base_url }}"
+          - "API Key (first 10 chars): {{ truenas_api_key[:10] }}..."
+          - "API Key length: {{ truenas_api_key | length }}"
+      
+    - name: Ensure TrueNAS API Key is set
+      ansible.builtin.fail:
+        msg: "TRUENAS_API_KEY environment variable is not set or is empty. Please set it to proceed."
+      when: truenas_api_key | length == 0
+    
+    - name: Test API connection
+      ansible.builtin.uri:
+        url: "{{ truenas_base_url }}/api/v2.0/system/info"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ truenas_api_key }}"
+        validate_certs: false
+        status_code: [200]
+      register: system_info
+      
+    - name: Display TrueNAS info
+      ansible.builtin.debug:
+        msg: 
+          - "✓ Authentication successful!"
+          - "Hostname: {{ system_info.json.hostname }}"
+          - "Version: {{ system_info.json.version }}"
