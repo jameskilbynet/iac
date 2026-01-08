@@ -81,6 +81,30 @@
               certResolver: cloudflare
             middlewares:
               - dashboard-auth
+          
+          # Wildcard certificate request router
+          wildcard-cert:
+            rule: "Host(`{{ wildcard_domain }}`)"
+            entryPoints:
+              - websecure
+            service: noop@internal
+            tls:
+              certResolver: cloudflare
+              domains:
+                - main: {{ wildcard_domain }}
+                  sans:
+                    - "*.{{ wildcard_domain }}"
+      
+      # TLS configuration with wildcard certificate
+      tls:
+        certificates:
+          - certFile: /acme/acme.json
+            keyFile: /acme/acme.json
+        stores:
+          default:
+            defaultCertificate:
+              certFile: /acme/acme.json
+              keyFile: /acme/acme.json
 
   pre_tasks:
     - name: Check if running on supported OS
@@ -179,7 +203,7 @@
           - "{{ traefik_port_web }}:80"
           - "{{ traefik_port_websecure }}:443"
         env:
-          CLOUDFLARE_API_TOKEN: "{{ cloudflare_api_token }}"
+          CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
         volumes:
           - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
           - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
@@ -238,7 +262,7 @@
           traefik.enable: "true"
           traefik.http.routers.nginx-test.rule: "Host(`{{ test_service_domain }}`)"
           traefik.http.routers.nginx-test.entrypoints: "websecure"
-          traefik.http.routers.nginx-test.tls.certresolver: "cloudflare"
+          traefik.http.routers.nginx-test.tls: "true"
           traefik.http.services.nginx-test.loadbalancer.server.port: "80"
 
     - name: Get recent Traefik logs
