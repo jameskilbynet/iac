@@ -112,6 +112,11 @@
         msg: "This playbook only supports Ubuntu/Debian"
       when: ansible_os_family not in ['Debian']
 
+    - name: Set dashboard domain based on hostname
+      ansible.builtin.set_fact:
+        dashboard_domain: "{{ ansible_hostname }}-dash.{{ wildcard_domain }}"
+      when: dashboard_domain is not defined
+
 
     - name: Add user to docker group
       ansible.builtin.user:
@@ -294,6 +299,8 @@
           1. Ensure DNS records point to this server:
              - {{ dashboard_domain }} -> {{ ansible_default_ipv4.address }}
              - {{ test_service_domain }} -> {{ ansible_default_ipv4.address }}
+          
+          Note: Dashboard domain auto-generated as {{ ansible_hostname }}-dash.{{ wildcard_domain }}
           2. Wait 1-2 minutes for SSL certificates to be issued
           
           Troubleshooting:
