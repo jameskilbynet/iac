@@ -94,17 +94,6 @@
                 - main: {{ wildcard_domain }}
                   sans:
                     - "*.{{ wildcard_domain }}"
-      
-      # TLS configuration with wildcard certificate
-      tls:
-        certificates:
-          - certFile: /acme/acme.json
-            keyFile: /acme/acme.json
-        stores:
-          default:
-            defaultCertificate:
-              certFile: /acme/acme.json
-              keyFile: /acme/acme.json
 
   pre_tasks:
     - name: Check if running on supported OS
