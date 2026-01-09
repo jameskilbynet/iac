@@ -10,13 +10,16 @@ These playbooks are designed to automate common infrastructure tasks across diff
 
 ```
 ansible/
-├── docker/          # Docker installation and configuration
-├── holodeck/        # VMware vSphere networking (test environment)
-├── portainer/       # Portainer container management
-├── traefik/         # Traefik reverse proxy and Cloudflare integration
-├── updates/         # System updates and maintenance
-├── vault/           # HashiCorp Vault secrets management
-└── vGPU/            # NVIDIA GPU drivers and container toolkit
+├── docker/           # Docker installation and configuration
+├── holodeck/         # VMware vSphere networking (test environment)
+├── packerforvmware/  # Packer, Terraform, and build tools for VMware
+├── portainer/        # Portainer container management and inventory
+├── traefik/          # Traefik reverse proxy and Cloudflare integration
+├── truenas/          # TrueNAS dataset and share automation
+├── updates/          # System updates and maintenance
+├── vault/            # HashiCorp Vault secrets management
+├── VCF/              # VMware Cloud Foundation offline bundle server
+└── vGPU/             # NVIDIA vGPU drivers and container toolkit
 ```
 
 ## Playbooks by Category
@@ -175,6 +178,66 @@ ansible-playbook vGPU/test_nvidia_container.yml
 **Usage**:
 ```bash
 ansible-playbook holodeck/vSwitch.yml
+```
+
+#### Packer Build Tools (`packerforvmware/install_packer_requirements.yml`)
+**Purpose**: Installs Packer, Terraform, Ansible, and supporting tools for VMware vSphere automation.
+
+**Features**:
+- Installs HashiCorp Packer and Terraform
+- Installs Ansible from official PPA
+- Installs gomplate for template rendering
+- Installs build utilities (git, jq, xorriso, etc.)
+- Configures repositories with GPG keys
+
+**Usage**:
+```bash
+ansible-playbook packerforvmware/install_packer_requirements.yml
+```
+
+#### VCF Offline Bundle Server (`VCF/install_offline_bundle_server.yml`)
+**Purpose**: Deploys an Nginx-based server for VMware Cloud Foundation offline bundles.
+
+**Features**:
+- Deploys Nginx in Docker container
+- Serves bundles from `/vcf` directory
+- Integrates with Traefik for HTTPS
+- Automatic certificate management via Cloudflare
+
+**Usage**:
+```bash
+ansible-playbook VCF/install_offline_bundle_server.yml
+```
+
+### 📦 Storage Management
+
+#### TrueNAS Dataset Creation (`truenas/create_datasets.yml`)
+**Purpose**: Creates ZFS datasets on TrueNAS via API.
+
+**Features**:
+- Reads configuration from CSV file
+- Creates datasets with custom properties
+- Sets ownership and permissions
+- Idempotent - skips existing datasets
+
+**Usage**:
+```bash
+ansible-playbook truenas/create_datasets.yml
+```
+
+#### TrueNAS Share Creation (`truenas/create_shares.yml`)
+**Purpose**: Creates NFS or SMB shares for TrueNAS datasets.
+
+**Features**:
+- Creates NFS or SMB shares from CSV
+- Configures network access and permissions
+- Enables and starts share services
+- Supports both share types
+
+**Usage**:
+```bash
+ansible-playbook truenas/create_shares.yml
+ansible-playbook truenas/create_shares.yml -e "share_type=smb"
 ```
 
 ## Prerequisites
