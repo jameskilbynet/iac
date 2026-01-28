@@ -32,10 +32,15 @@
     healthcheck_retries: "{{ traefik_healthcheck_retries | default(3) }}"
     healthcheck_start_period: "{{ traefik_healthcheck_start_period | default('30s') }}"
 
-    # Test service
+    # Test service (set deploy_test_service to false to skip)
+    deploy_test_service: "{{ traefik_deploy_test_service | default(true) }}"
     test_service_name: "{{ traefik_test_container | default('nginx-test') }}"
     test_service_image: "{{ traefik_test_image | default('nginx:alpine') }}"
     test_service_domain: "{{ traefik_test_domain | default('test.' ~ wildcard_domain) }}"
+
+    # Health check polling settings
+    healthcheck_poll_retries: "{{ traefik_healthcheck_poll_retries | default(12) }}"
+    healthcheck_poll_delay: "{{ traefik_healthcheck_poll_delay | default(5) }}"
 
     # Dashboard settings (dashboard_domain auto-generated in pre_tasks if not set)
     dashboard_admin_user: "{{ traefik_dashboard_user | default('admin') }}"
@@ -268,19 +273,20 @@
               start_period: "{{ healthcheck_start_period }}"
           register: container_result
 
-        - name: Wait for Traefik to become healthy
-          ansible.builtin.pause:
-            seconds: 30
-
-        - name: Check Traefik container status
+        - name: Wait for Traefik container to become healthy
           community.docker.docker_container_info:
             name: "{{ traefik_container_name }}"
           register: container_info
+          until: >
+            container_info.container.State.Status == "running" and
+            (container_info.container.State.Health.Status | default('starting')) == "healthy"
+          retries: "{{ healthcheck_poll_retries }}"
+          delay: "{{ healthcheck_poll_delay }}"
 
-        - name: Fail if Traefik container is not running
+        - name: Fail if Traefik container is not healthy
           ansible.builtin.fail:
-            msg: "Traefik container failed to start or is unhealthy"
-          when: container_info.container.State.Status != "running"
+            msg: "Traefik container failed to become healthy. Status: {{ container_info.container.State.Health.Status | default('unknown') }}"
+          when: (container_info.container.State.Health.Status | default('unhealthy')) != "healthy"
 
       rescue:
         - name: Get Traefik container logs on failure
@@ -327,6 +333,12 @@
           traefik.http.routers.nginx-test.entrypoints: "websecure"
           traefik.http.routers.nginx-test.tls: "true"
           traefik.http.services.nginx-test.loadbalancer.server.port: "80"
+      when: deploy_test_service | bool
+
+    - name: Skip test service deployment
+      ansible.builtin.debug:
+        msg: "Test service deployment skipped (deploy_test_service={{ deploy_test_service }})"
+      when: not (deploy_test_service | bool)
 
     - name: Get recent Traefik logs
       ansible.builtin.command:
@@ -350,17 +362,24 @@
           Traefik Deployment Summary
           ==========================================
           Container Status: {{ container_info.container.State.Status }}
+          Health Status: {{ container_info.container.State.Health.Status | default('N/A') }}
           Dashboard URL: https://{{ dashboard_domain }}
+          {% if deploy_test_service | bool %}
           Test Service URL: https://{{ test_service_domain }}
-          
+          {% else %}
+          Test Service: Not deployed (disabled)
+          {% endif %}
+
           Next Steps:
           1. Ensure DNS records point to this server:
              - {{ dashboard_domain }} -> {{ ansible_facts['default_ipv4']['address'] }}
+          {% if deploy_test_service | bool %}
              - {{ test_service_domain }} -> {{ ansible_facts['default_ipv4']['address'] }}
-          
+          {% endif %}
+
           Note: Dashboard domain auto-generated as {{ ansible_facts['hostname'] }}-dash.{{ wildcard_domain }}
           2. Wait 1-2 minutes for SSL certificates to be issued
-          
+
           Troubleshooting:
           - Check logs: docker logs {{ traefik_container_name }}
           - Verify network: docker network inspect {{ traefik_network }}
