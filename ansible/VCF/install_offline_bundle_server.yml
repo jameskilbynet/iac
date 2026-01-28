@@ -5,7 +5,7 @@
 
   tasks:
     - name: Ensure Nginx image is available (if not, it will be pulled)
-      docker_image:
+      community.docker.docker_image:
         name: nginx:latest
         source: pull
 

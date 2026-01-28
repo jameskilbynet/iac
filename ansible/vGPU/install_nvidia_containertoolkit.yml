@@ -37,33 +37,39 @@
 
     - name: Configure NVIDIA runtime for Docker
       become: true
-      command: nvidia-ctk runtime configure --runtime=docker
+      ansible.builtin.command: nvidia-ctk runtime configure --runtime=docker
       args:
         creates: /etc/docker/daemon.json
+      notify: Restart Docker service
 
-    - name: Restart Docker to apply NVIDIA runtime config
-      systemd:
+    - name: Ensure NVIDIA vGPU licensing daemon is enabled
+      ansible.builtin.systemd:
+        name: nvidia-gridd
+        enabled: true
+      notify: Start NVIDIA gridd service
+
+    - name: Flush handlers to ensure Docker is restarted before testing
+      ansible.builtin.meta: flush_handlers
+
+    - name: Run nvidia-smi inside an Ubuntu container with NVIDIA runtime
+      become: true
+      ansible.builtin.shell: >
+        docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
+      register: nvidia_smi_output
+      changed_when: false
+
+    - name: Show nvidia-smi result
+      ansible.builtin.debug:
+        var: nvidia_smi_output.stdout
+
+  handlers:
+    - name: Restart Docker service
+      ansible.builtin.systemd:
         name: docker
         state: restarted
         enabled: true
 
-
-    - name: Start NVIDIA vGPU licensing daemon
-      systemd:
+    - name: Start NVIDIA gridd service
+      ansible.builtin.systemd:
         name: nvidia-gridd
-        enabled: true
         state: started
-
-    #Run the container and capture nvidia-smi output
-    - name: Run nvidia-smi inside an Ubuntu container with NVIDIA runtime
-      become: true                        # ← equivalent to the leading “sudo”
-      shell: >
-        docker run --rm --runtime=nvidia --gpus all ubuntu nvidia-smi
-      register: nvidia_smi_output
-      changed_when: false                 # treat this as a read-only check
-
-
-       # 2. Print the captured output
-    - name: Show nvidia-smi result
-      debug:
-        var: nvidia_smi_output.stdout

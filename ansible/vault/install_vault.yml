@@ -65,7 +65,7 @@
         mode: '0700'
 
     - name: Create Vault configuration file
-      copy:
+      ansible.builtin.copy:
         dest: "{{ vault_config_path }}/vault.hcl"
         owner: "{{ vault_user }}"
         group: "{{ vault_group }}"
@@ -81,9 +81,10 @@
           }
 
           ui = true
+      notify: Restart Vault service
 
     - name: Create systemd service for Vault
-      copy:
+      ansible.builtin.copy:
         dest: "{{ vault_service_file }}"
         mode: '0644'
         content: |
@@ -103,16 +104,27 @@
 
           [Install]
           WantedBy=multi-user.target
+      notify:
+        - Reload systemd daemon
+        - Restart Vault service
 
-    - name: Reload systemd and start Vault
-      systemd:
-        daemon_reload: yes
+    - name: Enable Vault service
+      ansible.builtin.systemd:
         name: vault
         enabled: yes
-        state: started
 
     - name: Wait for Vault to be reachable
-      wait_for:
+      ansible.builtin.wait_for:
         host: 127.0.0.1
         port: 8200
         timeout: 30
+
+  handlers:
+    - name: Reload systemd daemon
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Restart Vault service
+      ansible.builtin.systemd:
+        name: vault
+        state: restarted

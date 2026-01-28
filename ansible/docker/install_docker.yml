@@ -63,17 +63,19 @@
 
 
     - name: Install Docker Engine and related packages
-      apt:
+      ansible.builtin.apt:
         name:
           - docker-ce
           - docker-ce-cli
           - containerd.io
           - docker-buildx-plugin
           - docker-compose-plugin
-        state: latest
+        state: present
+      notify: Start Docker service
 
-    - name: Ensure Docker service is running and enabled
-      service:
+  handlers:
+    - name: Start Docker service
+      ansible.builtin.service:
         name: docker
         state: started
         enabled: true

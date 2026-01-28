@@ -1,21 +1,22 @@
 ---
 - name: Deploy Portainer agent
   hosts: all
-  become: true    # run everything with sudo
+  become: true
 
   vars:
-    # 👇 Pin the agent image so upgrades are explicit
     portainer_agent_image: "portainer/agent:2.19.4"
     container_name: "portainer_agent"
-    host_port:           9001          # change only if 9001 clashes
+    host_port: 9001
 
   tasks:
     - name: Pull the required Portainer image
       community.docker.docker_image:
         name: "{{ portainer_agent_image }}"
         source: pull
+      notify: Deploy Portainer container
 
-    - name: Run / upgrade Portainer agent
+  handlers:
+    - name: Deploy Portainer container
       community.docker.docker_container:
         name: "{{ container_name }}"
         image: "{{ portainer_agent_image }}"
@@ -25,4 +26,4 @@
         volumes:
           - /var/run/docker.sock:/var/run/docker.sock
           - /var/lib/docker/volumes:/var/lib/docker/volumes
-          - /:/host                 # mirrors your `-v /:/host`
+          - /:/host

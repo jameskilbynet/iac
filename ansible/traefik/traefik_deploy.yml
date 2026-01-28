@@ -166,6 +166,7 @@
         owner: root
         group: root
       register: static_config_result
+      notify: Restart Traefik container
 
     - name: Write Traefik dynamic configuration
       ansible.builtin.copy:
@@ -175,6 +176,7 @@
         owner: root
         group: root
       register: dynamic_config_result
+      notify: Restart Traefik container
 
     - name: Pull Traefik Docker image
       community.docker.docker_image:
@@ -299,3 +301,10 @@
           - Verify network: docker network inspect {{ traefik_network }}
           - Test locally: curl -H "Host: {{ dashboard_domain }}"
           ==========================================
+
+  handlers:
+    - name: Restart Traefik container
+      community.docker.docker_container:
+        name: "{{ traefik_container_name }}"
+        state: started
+        restart: true
