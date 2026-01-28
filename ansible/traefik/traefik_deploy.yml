@@ -180,7 +180,7 @@
       community.docker.docker_image:
         name: "{{ traefik_image }}"
         source: pull
-        force_source: true
+        force_source: false
       register: image_pull_result
 
     - name: Stop existing Traefik container if running
