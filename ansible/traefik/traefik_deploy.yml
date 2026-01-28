@@ -5,6 +5,47 @@
   gather_facts: true
 
   vars:
+    # Traefik container settings - override via inventory, group_vars, or --extra-vars
+    traefik_image: "{{ traefik_docker_image | default('traefik:v3.0') }}"
+    traefik_container_name: "{{ traefik_name | default('traefik') }}"
+    traefik_config_dir: "{{ traefik_config_path | default('/etc/traefik') }}"
+    traefik_cert_dir: "{{ traefik_acme_path | default('/etc/traefik/acme') }}"
+    traefik_network: "{{ traefik_docker_network | default('traefik-net') }}"
+
+    # Ports
+    traefik_port_web: "{{ traefik_http_port | default(80) }}"
+    traefik_port_websecure: "{{ traefik_https_port | default(443) }}"
+
+    # ACME/DNS settings
+    acme_delay_before_check: "{{ acme_dns_delay | default(10) }}"
+    dns_resolvers: "{{ acme_dns_resolvers | default(['1.1.1.1:53', '8.8.8.8:53']) }}"
+
+    # Logging
+    log_level: "{{ traefik_log_level | default('INFO') }}"
+    log_format: "{{ traefik_log_format | default('json') }}"
+    log_max_size: "{{ traefik_log_max_size | default('10m') }}"
+    log_max_files: "{{ traefik_log_max_files | default('3') }}"
+
+    # Health checks
+    healthcheck_interval: "{{ traefik_healthcheck_interval | default('30s') }}"
+    healthcheck_timeout: "{{ traefik_healthcheck_timeout | default('10s') }}"
+    healthcheck_retries: "{{ traefik_healthcheck_retries | default(3) }}"
+    healthcheck_start_period: "{{ traefik_healthcheck_start_period | default('30s') }}"
+
+    # Test service
+    test_service_name: "{{ traefik_test_container | default('nginx-test') }}"
+    test_service_image: "{{ traefik_test_image | default('nginx:alpine') }}"
+    test_service_domain: "{{ traefik_test_domain | default('test.' ~ wildcard_domain) }}"
+
+    # Dashboard settings (dashboard_domain auto-generated in pre_tasks if not set)
+    dashboard_admin_user: "{{ traefik_dashboard_user | default('admin') }}"
+
+    # Required variables (no defaults - must be provided):
+    # - cloudflare_api_token: Cloudflare API token for DNS challenge
+    # - wildcard_domain: Base domain for wildcard certificates
+    # - dashboard_admin_password_hash: htpasswd hash for dashboard auth
+
+    # Static configuration template
     traefik_static_config: |
       # Entry points configuration
       entryPoints:
