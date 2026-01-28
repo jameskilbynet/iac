@@ -4,14 +4,15 @@
   become: yes
 
   vars:
-    nvidia_driver_file: NVIDIA-Linux-x86_64-535.247.01-grid.run
-    nvidia_licence_file: client_configuration_token_04-08-2025-16-54-19.tok
-    nvidia_driver_path: /tmp/{{ nvidia_driver_file }}
+    # NVIDIA driver configuration - override via inventory, group_vars, or --extra-vars
+    nvidia_driver_file: "{{ nvidia_vgpu_driver_file | default('NVIDIA-Linux-x86_64-535.247.01-grid.run') }}"
+    nvidia_licence_file: "{{ nvidia_vgpu_licence_file | default('client_configuration_token_04-08-2025-16-54-19.tok') }}"
+    nvidia_driver_path: "{{ nvidia_vgpu_driver_path | default('/tmp/' ~ nvidia_driver_file) }}"
 
-     # NFS share configuration – override in inventory or with --extra-vars as needed
-    nfs_server: nas.jameskilby.cloud
-    nfs_export_path: /mnt/pool1/ISO/nvidia
-    nfs_mount_point: /mnt/iso/nvidia
+    # NFS share configuration - override via inventory, group_vars, or --extra-vars
+    nfs_server: "{{ nvidia_nfs_server | default('nas.jameskilby.cloud') }}"
+    nfs_export_path: "{{ nvidia_nfs_export_path | default('/mnt/pool1/ISO/nvidia') }}"
+    nfs_mount_point: "{{ nvidia_nfs_mount_point | default('/mnt/iso/nvidia') }}"
 
   pre_tasks:
     - name: Install build tools and headers
