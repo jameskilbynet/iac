@@ -57,10 +57,10 @@
     - name: Abort if NFS variables are missing
       ansible.builtin.assert:
         that:
-        - nfs_server | length > 0
-        - nfs_export_path | length > 0
-        - nfs_mount_point | length > 0
-      
+          - nfs_server | length > 0
+          - nfs_export_path | length > 0
+          - nfs_mount_point | length > 0
+
     - name: Check if NVIDIA driver is already installed
       ansible.builtin.command: nvidia-smi
       register: nvidia_smi_check
@@ -72,67 +72,117 @@
         msg: "NVIDIA driver is already installed. Skipping installation."
       when: nvidia_smi_check.rc == 0
 
-    - name: Copy NVIDIA vGPU driver installer
-      ansible.builtin.copy:
-        src: "{{ nfs_mount_point }}/{{ nvidia_driver_file }}"
-        dest: "{{ nvidia_driver_path }}"
-        mode: '0755'
-        remote_src: true
+    - name: Install NVIDIA vGPU driver
+      block:
+        - name: Copy NVIDIA vGPU driver installer
+          ansible.builtin.copy:
+            src: "{{ nfs_mount_point }}/{{ nvidia_driver_file }}"
+            dest: "{{ nvidia_driver_path }}"
+            mode: '0755'
+            remote_src: true
+
+        - name: Run NVIDIA vGPU driver installer
+          ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check"
+          args:
+            creates: /usr/bin/nvidia-smi
+
+      rescue:
+        - name: Display driver installation failure
+          ansible.builtin.debug:
+            msg: |
+              NVIDIA driver installation failed.
+              Verify:
+              - Driver file exists at {{ nfs_mount_point }}/{{ nvidia_driver_file }}
+              - Kernel headers are installed for {{ ansible_kernel }}
+              - No conflicting NVIDIA drivers are installed
+
+        - name: Fail with driver installation error
+          ansible.builtin.fail:
+            msg: "NVIDIA vGPU driver installation failed. Check output above."
       when: nvidia_smi_check.rc != 0
 
-    - name: Ensure NVIDIA ClientConfigToken directory exists
-      ansible.builtin.file:
-        path: /etc/nvidia/ClientConfigToken
-        state: directory
-        owner: root
-        group: root
-        mode: '0755'
+    - name: Configure NVIDIA licensing
+      block:
+        - name: Ensure NVIDIA ClientConfigToken directory exists
+          ansible.builtin.file:
+            path: /etc/nvidia/ClientConfigToken
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
 
+        - name: Copy NVIDIA licence token
+          ansible.builtin.copy:
+            src: "{{ nfs_mount_point }}/{{ nvidia_licence_file }}"
+            dest: /etc/nvidia/ClientConfigToken/
+            mode: '0744'
+            remote_src: true
 
-    - name: copy NVIDIA Licence token
-      ansible.builtin.copy:
-        src: "{{ nfs_mount_point }}/{{ nvidia_licence_file }}"
-        dest: /etc/nvidia/ClientConfigToken/
-        mode: '744'
-        remote_src: true
+        - name: Restart NVIDIA vGPU client software (nvidia-gridd)
+          ansible.builtin.systemd:
+            name: nvidia-gridd
+            state: restarted
+            enabled: true
 
-    - name: Run NVIDIA vGPU driver installer
-      ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check"
-      args:
-        creates: /usr/bin/nvidia-smi
-      when: nvidia_smi_check.rc != 0
+        - name: Wait for nvidia-gridd to be active
+          ansible.builtin.systemd:
+            name: nvidia-gridd
+          register: gridd_status
+          retries: 5
+          delay: 2
+          until: gridd_status.status.ActiveState == "active"
 
-    - name: Restart NVIDIA vGPU client software (nvidia-gridd)
-      ansible.builtin.systemd:
-        name: nvidia-gridd
-        state: restarted
-        enabled: true
+        - name: Confirm gridd service is active
+          ansible.builtin.debug:
+            msg: "nvidia-gridd is running."
 
-    - name: Wait for nvidia-gridd to be active
-      ansible.builtin.systemd:
-        name: nvidia-gridd
-      register: gridd_status
-      retries: 5
-      delay: 2
-      until: gridd_status.status.ActiveState == "active"
+        - name: Wait for license to be applied
+          ansible.builtin.pause:
+            seconds: 30
 
-    - name: Confirm gridd service is active
-      ansible.builtin.debug:
-        msg: "nvidia-gridd is running."
-      
-    - name: Wait for 30 seconds to ensure license is applied
-      pause:
-        seconds: 30
+        - name: Check vGPU license status
+          ansible.builtin.shell: |
+            /usr/bin/nvidia-smi -q
+          environment:
+            PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          register: vgpu_info
+          changed_when: false
+          failed_when: "'Unlicensed' in vgpu_info.stdout"
 
-    - name: Check vGPU license status
-      ansible.builtin.shell: |
-        /usr/bin/nvidia-smi -q
-      environment:
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      register: vgpu_info
-      changed_when: false
-      failed_when: "'Unlicensed' in vgpu_info.stdout"
+      rescue:
+        - name: Get nvidia-gridd service status
+          ansible.builtin.command: systemctl status nvidia-gridd
+          register: gridd_service_status
+          failed_when: false
+          changed_when: false
+
+        - name: Get nvidia-gridd logs
+          ansible.builtin.command: journalctl -u nvidia-gridd --no-pager -n 30
+          register: gridd_logs
+          failed_when: false
+          changed_when: false
+
+        - name: Display licensing failure details
+          ansible.builtin.debug:
+            msg: |
+              NVIDIA vGPU licensing failed.
+
+              Service status:
+              {{ gridd_service_status.stdout | default('Unable to get status') }}
+
+              Journal logs:
+              {{ gridd_logs.stdout | default('Unable to get logs') }}
+
+              Verify:
+              - License token file exists at {{ nfs_mount_point }}/{{ nvidia_licence_file }}
+              - License server is reachable
+              - Token is valid and not expired
+
+        - name: Fail with licensing error
+          ansible.builtin.fail:
+            msg: "NVIDIA vGPU licensing failed. Check output above."
 
     - name: Show vGPU license info
       ansible.builtin.debug:
         msg: "{{ vgpu_info.stdout | trim }}"
+      when: vgpu_info is defined

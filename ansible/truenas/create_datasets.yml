@@ -33,19 +33,31 @@
       loop_control:
         label: "{{ item.dataset }}"
 
-    - name: Test TrueNAS API connectivity
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/system/info"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: system_info
+    - name: Connect to TrueNAS API
+      block:
+        - name: Test TrueNAS API connectivity
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/system/info"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+          register: system_info
 
-    - name: Display TrueNAS system info
-      ansible.builtin.debug:
-        msg: "Connected to TrueNAS {{ system_info.json.version }} ({{ system_info.json.hostname }})"
+        - name: Display TrueNAS system info
+          ansible.builtin.debug:
+            msg: "Connected to TrueNAS {{ system_info.json.version }} ({{ system_info.json.hostname }})"
+
+      rescue:
+        - name: Display API connection failure
+          ansible.builtin.fail:
+            msg: |
+              Failed to connect to TrueNAS API at {{ truenas_api_url }}
+              Verify:
+              - TRUENAS_HOST is correct
+              - TRUENAS_API_KEY is valid
+              - TrueNAS is reachable from this host
 
     - name: Get existing datasets
       ansible.builtin.uri:
@@ -67,60 +79,72 @@
       ansible.builtin.set_fact:
         unique_parents: "{{ (all_parent_paths | default([]) | unique | list | sort) if all_parent_paths is defined else [] }}"
 
-    - name: Create parent datasets
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/pool/dataset"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          name: "{{ truenas_pool }}/{{ item }}"
-          type: "FILESYSTEM"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: parent_creation
-      loop: "{{ unique_parents }}"
-      when: 
-        - item != ''
-        - "(truenas_pool ~ '/' ~ item) not in existing_datasets.json | map(attribute='id') | list"
-      ignore_errors: true
-
-    - name: Refresh existing datasets after parent creation
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/pool/dataset"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: existing_datasets
-
     - name: Create datasets
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/pool/dataset"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          name: "{{ truenas_pool }}/{{ item.dataset }}"
-          type: "FILESYSTEM"
-          sync: "{{ item.sync | upper }}"
-          recordsize: "{{ item.recordsize }}"
-          compression: "{{ item.compression | upper }}"
-          atime: "{{ item.atime | upper }}"
-          acltype: "{{ item.acl_type | upper }}"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: dataset_creation
-      loop: "{{ dataset_config.list | sort(attribute='dataset') }}"
-      loop_control:
-        label: "{{ truenas_pool }}/{{ item.dataset }}"
-      when: "(truenas_pool ~ '/' ~ item.dataset) not in existing_datasets.json | map(attribute='id') | list"
-      ignore_errors: true
+      block:
+        - name: Create parent datasets
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/pool/dataset"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              name: "{{ truenas_pool }}/{{ item }}"
+              type: "FILESYSTEM"
+            validate_certs: "{{ validate_certs }}"
+            status_code: [200, 409]
+          register: parent_creation
+          loop: "{{ unique_parents }}"
+          when:
+            - item != ''
+            - "(truenas_pool ~ '/' ~ item) not in existing_datasets.json | map(attribute='id') | list"
+
+        - name: Refresh existing datasets after parent creation
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/pool/dataset"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+          register: existing_datasets
+
+        - name: Create leaf datasets
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/pool/dataset"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              name: "{{ truenas_pool }}/{{ item.dataset }}"
+              type: "FILESYSTEM"
+              sync: "{{ item.sync | upper }}"
+              recordsize: "{{ item.recordsize }}"
+              compression: "{{ item.compression | upper }}"
+              atime: "{{ item.atime | upper }}"
+              acltype: "{{ item.acl_type | upper }}"
+            validate_certs: "{{ validate_certs }}"
+            status_code: [200, 409]
+          register: dataset_creation
+          loop: "{{ dataset_config.list | sort(attribute='dataset') }}"
+          loop_control:
+            label: "{{ truenas_pool }}/{{ item.dataset }}"
+          when: "(truenas_pool ~ '/' ~ item.dataset) not in existing_datasets.json | map(attribute='id') | list"
+
+      rescue:
+        - name: Display dataset creation failure
+          ansible.builtin.debug:
+            msg: |
+              Dataset creation failed.
+              Parent creation results: {{ parent_creation.results | default('N/A') | to_nice_yaml }}
+              Dataset creation results: {{ dataset_creation.results | default('N/A') | to_nice_yaml }}
+
+        - name: Fail with dataset error
+          ansible.builtin.fail:
+            msg: "Failed to create one or more datasets. Check output above."
 
     - name: Set dataset permissions
       ansible.builtin.uri:
@@ -143,11 +167,10 @@
       loop: "{{ dataset_config.list }}"
       loop_control:
         label: "{{ truenas_pool }}/{{ item.dataset }}"
-      ignore_errors: true
       delay: 2
       retries: 3
       until: permission_result is succeeded
 
     - name: Summary of created datasets
       ansible.builtin.debug:
-        msg: "Dataset creation completed. Check results above for any errors."
+        msg: "Dataset creation completed successfully."

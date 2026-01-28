@@ -37,19 +37,31 @@
       loop_control:
         label: "{{ item.share_name }}"
 
-    - name: Test TrueNAS API connectivity
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/system/info"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: system_info
+    - name: Connect to TrueNAS API
+      block:
+        - name: Test TrueNAS API connectivity
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/system/info"
+            method: GET
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+          register: system_info
 
-    - name: Display TrueNAS system info
-      ansible.builtin.debug:
-        msg: "Connected to TrueNAS {{ system_info.json.version }} ({{ system_info.json.hostname }})"
+        - name: Display TrueNAS system info
+          ansible.builtin.debug:
+            msg: "Connected to TrueNAS {{ system_info.json.version }} ({{ system_info.json.hostname }})"
+
+      rescue:
+        - name: Display API connection failure
+          ansible.builtin.fail:
+            msg: |
+              Failed to connect to TrueNAS API at {{ truenas_api_url }}
+              Verify:
+              - TRUENAS_HOST is correct
+              - TRUENAS_API_KEY is valid
+              - TrueNAS is reachable from this host
 
     - name: Get existing NFS shares
       ansible.builtin.uri:
@@ -74,134 +86,164 @@
       when: share_type == 'smb'
 
     - name: Create NFS shares
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/sharing/nfs"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          path: "/mnt/{{ truenas_pool }}/{{ item.dataset }}"
-          comment: "{{ item.description }}"
-          enabled: true
-          networks:
-            - "{{ nfs_network }}"
-          hosts: []
-          maproot_user: "{{ nfs_maproot_user }}"
-          maproot_group: "{{ nfs_maproot_group }}"
-          mapall_user: ""
-          mapall_group: ""
-          security: []
-          ro: false
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: nfs_share_creation
-      loop: "{{ dataset_config.list }}"
-      loop_control:
-        label: "{{ item.share_name }}"
-      when:
-        - share_type == 'nfs'
-        - "('/mnt/' ~ truenas_pool ~ '/' ~ item.dataset) not in existing_nfs_shares.json | map(attribute='path') | list"
-      ignore_errors: true
+      block:
+        - name: Create NFS share entries
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/sharing/nfs"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              path: "/mnt/{{ truenas_pool }}/{{ item.dataset }}"
+              comment: "{{ item.description }}"
+              enabled: true
+              networks:
+                - "{{ nfs_network }}"
+              hosts: []
+              maproot_user: "{{ nfs_maproot_user }}"
+              maproot_group: "{{ nfs_maproot_group }}"
+              mapall_user: ""
+              mapall_group: ""
+              security: []
+              ro: false
+            validate_certs: "{{ validate_certs }}"
+            status_code: [200, 409]
+          register: nfs_share_creation
+          loop: "{{ dataset_config.list }}"
+          loop_control:
+            label: "{{ item.share_name }}"
+          when: "('/mnt/' ~ truenas_pool ~ '/' ~ item.dataset) not in existing_nfs_shares.json | map(attribute='path') | list"
+
+      rescue:
+        - name: Display NFS share creation failure
+          ansible.builtin.debug:
+            msg: |
+              NFS share creation failed.
+              Results: {{ nfs_share_creation.results | default('N/A') | to_nice_yaml }}
+
+        - name: Fail with NFS share error
+          ansible.builtin.fail:
+            msg: "Failed to create one or more NFS shares. Check output above."
+      when: share_type == 'nfs'
 
     - name: Create SMB shares
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/sharing/smb"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          path: "/mnt/{{ truenas_pool }}/{{ item.dataset }}"
-          name: "{{ item.share_name }}"
-          comment: "{{ item.description }}"
-          enabled: true
-          purpose: "NO_PRESET"
-          browsable: true
-          guestok: false
-          ro: false
-          recyclebin: false
-          aapl_name_mangling: false
-          abe: false
-          acl: true
-          durablehandle: true
-          shadowcopy: true
-          streams: true
-          fsrvp: false
-          auxsmbconf: ""
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      register: smb_share_creation
-      loop: "{{ dataset_config.list }}"
-      loop_control:
-        label: "{{ item.share_name }}"
-      when:
-        - share_type == 'smb'
-        - "item.share_name not in existing_smb_shares.json | map(attribute='name') | list"
-      ignore_errors: true
+      block:
+        - name: Create SMB share entries
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/sharing/smb"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              path: "/mnt/{{ truenas_pool }}/{{ item.dataset }}"
+              name: "{{ item.share_name }}"
+              comment: "{{ item.description }}"
+              enabled: true
+              purpose: "NO_PRESET"
+              browsable: true
+              guestok: false
+              ro: false
+              recyclebin: false
+              aapl_name_mangling: false
+              abe: false
+              acl: true
+              durablehandle: true
+              shadowcopy: true
+              streams: true
+              fsrvp: false
+              auxsmbconf: ""
+            validate_certs: "{{ validate_certs }}"
+            status_code: [200, 409]
+          register: smb_share_creation
+          loop: "{{ dataset_config.list }}"
+          loop_control:
+            label: "{{ item.share_name }}"
+          when: "item.share_name not in existing_smb_shares.json | map(attribute='name') | list"
 
-    - name: Enable NFS service
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/service/id/nfs"
-        method: PUT
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          enable: true
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      when: share_type == 'nfs'
-      ignore_errors: true
+      rescue:
+        - name: Display SMB share creation failure
+          ansible.builtin.debug:
+            msg: |
+              SMB share creation failed.
+              Results: {{ smb_share_creation.results | default('N/A') | to_nice_yaml }}
 
-    - name: Start NFS service
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/service/start"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          service: "nfs"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
-      when: share_type == 'nfs'
-      ignore_errors: true
-
-    - name: Enable SMB service
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/service/id/cifs"
-        method: PUT
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          enable: true
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
+        - name: Fail with SMB share error
+          ansible.builtin.fail:
+            msg: "Failed to create one or more SMB shares. Check output above."
       when: share_type == 'smb'
-      ignore_errors: true
 
-    - name: Start SMB service
-      ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/service/start"
-        method: POST
-        headers:
-          Authorization: "Bearer {{ truenas_api_key }}"
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          service: "cifs"
-        validate_certs: "{{ validate_certs }}"
-        status_code: 200
+    - name: Enable and start NFS service
+      block:
+        - name: Enable NFS service
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/service/id/nfs"
+            method: PUT
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              enable: true
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+
+        - name: Start NFS service
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/service/start"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              service: "nfs"
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+
+      rescue:
+        - name: Display NFS service failure
+          ansible.builtin.debug:
+            msg: "Warning: Failed to enable/start NFS service. Shares were created but service may need manual start."
+      when: share_type == 'nfs'
+
+    - name: Enable and start SMB service
+      block:
+        - name: Enable SMB service
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/service/id/cifs"
+            method: PUT
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              enable: true
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+
+        - name: Start SMB service
+          ansible.builtin.uri:
+            url: "{{ truenas_api_url }}/service/start"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ truenas_api_key }}"
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              service: "cifs"
+            validate_certs: "{{ validate_certs }}"
+            status_code: 200
+
+      rescue:
+        - name: Display SMB service failure
+          ansible.builtin.debug:
+            msg: "Warning: Failed to enable/start SMB service. Shares were created but service may need manual start."
       when: share_type == 'smb'
-      ignore_errors: true
 
     - name: Summary of created shares
       ansible.builtin.debug:
-        msg: "{{ share_type | upper }} share creation completed. Check results above for any errors."
+        msg: "{{ share_type | upper }} share creation completed successfully."

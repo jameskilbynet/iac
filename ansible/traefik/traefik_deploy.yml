@@ -147,7 +147,6 @@
         modification_time: preserve
         access_time: preserve
 
-
     - name: Create Docker network for Traefik
       community.docker.docker_network:
         name: "{{ traefik_network }}"
@@ -178,68 +177,93 @@
       register: dynamic_config_result
       notify: Restart Traefik container
 
-    - name: Pull Traefik Docker image
-      community.docker.docker_image:
-        name: "{{ traefik_image }}"
-        source: pull
-        force_source: false
-      register: image_pull_result
-
-    - name: Stop existing Traefik container if running
-      community.docker.docker_container:
-        name: "{{ traefik_container_name }}"
-        state: absent
-      ignore_errors: true
-
     - name: Deploy Traefik container
-      community.docker.docker_container:
-        name: "{{ traefik_container_name }}"
-        image: "{{ traefik_image }}"
-        restart_policy: unless-stopped
-        state: started
-        ports:
-          - "{{ traefik_port_web }}:80"
-          - "{{ traefik_port_websecure }}:443"
-        env:
-          CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
-        volumes:
-          - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
-          - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
-          - "{{ traefik_cert_dir }}:/acme"
-          - "/var/run/docker.sock:/var/run/docker.sock:ro"
-        labels:
-          traefik.enable: "true"
-          traefik.http.routers.traefik.rule: "Host(`{{ dashboard_domain }}`)"
-          traefik.http.routers.traefik.service: "api@internal"
-          traefik.http.routers.traefik.entrypoints: "websecure"
-          traefik.http.routers.traefik.middlewares: "dashboard-auth@file"
-        networks:
-          - name: "{{ traefik_network }}"
-        log_driver: json-file
-        log_options:
-          max-size: "{{ log_max_size }}"
-          max-file: "{{ log_max_files }}"
-        healthcheck:
-          test: ["CMD", "traefik", "healthcheck", "--ping"]
-          interval: "{{ healthcheck_interval }}"
-          timeout: "{{ healthcheck_timeout }}"
-          retries: "{{ healthcheck_retries }}"
-          start_period: "{{ healthcheck_start_period }}"
-      register: container_result
+      block:
+        - name: Pull Traefik Docker image
+          community.docker.docker_image:
+            name: "{{ traefik_image }}"
+            source: pull
+            force_source: false
+          register: image_pull_result
 
-    - name: Wait for Traefik to become healthy
-      ansible.builtin.pause:
-        seconds: 30
+        - name: Stop existing Traefik container if running
+          community.docker.docker_container:
+            name: "{{ traefik_container_name }}"
+            state: absent
 
-    - name: Check Traefik container status
-      community.docker.docker_container_info:
-        name: "{{ traefik_container_name }}"
-      register: container_info
+        - name: Start Traefik container
+          community.docker.docker_container:
+            name: "{{ traefik_container_name }}"
+            image: "{{ traefik_image }}"
+            restart_policy: unless-stopped
+            state: started
+            ports:
+              - "{{ traefik_port_web }}:80"
+              - "{{ traefik_port_websecure }}:443"
+            env:
+              CF_DNS_API_TOKEN: "{{ cloudflare_api_token }}"
+            volumes:
+              - "{{ traefik_config_dir }}/traefik.yml:/etc/traefik/traefik.yml:ro"
+              - "{{ traefik_config_dir }}/dynamic.yml:/etc/traefik/dynamic.yml:ro"
+              - "{{ traefik_cert_dir }}:/acme"
+              - "/var/run/docker.sock:/var/run/docker.sock:ro"
+            labels:
+              traefik.enable: "true"
+              traefik.http.routers.traefik.rule: "Host(`{{ dashboard_domain }}`)"
+              traefik.http.routers.traefik.service: "api@internal"
+              traefik.http.routers.traefik.entrypoints: "websecure"
+              traefik.http.routers.traefik.middlewares: "dashboard-auth@file"
+            networks:
+              - name: "{{ traefik_network }}"
+            log_driver: json-file
+            log_options:
+              max-size: "{{ log_max_size }}"
+              max-file: "{{ log_max_files }}"
+            healthcheck:
+              test: ["CMD", "traefik", "healthcheck", "--ping"]
+              interval: "{{ healthcheck_interval }}"
+              timeout: "{{ healthcheck_timeout }}"
+              retries: "{{ healthcheck_retries }}"
+              start_period: "{{ healthcheck_start_period }}"
+          register: container_result
 
-    - name: Fail if Traefik container is not running
-      ansible.builtin.fail:
-        msg: "Traefik container failed to start or is unhealthy"
-      when: container_info.container.State.Status != "running"
+        - name: Wait for Traefik to become healthy
+          ansible.builtin.pause:
+            seconds: 30
+
+        - name: Check Traefik container status
+          community.docker.docker_container_info:
+            name: "{{ traefik_container_name }}"
+          register: container_info
+
+        - name: Fail if Traefik container is not running
+          ansible.builtin.fail:
+            msg: "Traefik container failed to start or is unhealthy"
+          when: container_info.container.State.Status != "running"
+
+      rescue:
+        - name: Get Traefik container logs on failure
+          ansible.builtin.command:
+            cmd: docker logs --tail 100 {{ traefik_container_name }}
+          register: failure_logs
+          failed_when: false
+          changed_when: false
+
+        - name: Display failure logs
+          ansible.builtin.debug:
+            msg: |
+              Traefik deployment failed. Container logs:
+              {{ failure_logs.stdout | default('No logs available') }}
+
+        - name: Cleanup failed container
+          community.docker.docker_container:
+            name: "{{ traefik_container_name }}"
+            state: absent
+          failed_when: false
+
+        - name: Fail with deployment error
+          ansible.builtin.fail:
+            msg: "Traefik deployment failed. Check logs above for details."
 
     - name: Display Traefik container status
       ansible.builtin.debug:

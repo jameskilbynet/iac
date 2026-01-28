@@ -13,43 +13,53 @@
     vault_service_file: /etc/systemd/system/vault.service
 
   tasks:
-
-    - name: Install dependencies
-      apt:
-        name:
-          - unzip
-          - curl
-          - gnupg
-          - software-properties-common
-        state: present
-        update_cache: yes
-
-    - name: Add HashiCorp GPG key
-      ansible.builtin.apt_key:
-        url: https://apt.releases.hashicorp.com/gpg
-        state: present
-
-    - name: Add HashiCorp APT repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
-        state: present
-        filename: hashicorp
-
     - name: Install Vault
-      apt:
-        name: vault={{ vault_version }}
-        state: present
-        update_cache: yes
+      block:
+        - name: Install dependencies
+          ansible.builtin.apt:
+            name:
+              - unzip
+              - curl
+              - gnupg
+              - software-properties-common
+            state: present
+            update_cache: yes
+
+        - name: Add HashiCorp GPG key
+          ansible.builtin.apt_key:
+            url: https://apt.releases.hashicorp.com/gpg
+            state: present
+
+        - name: Add HashiCorp APT repository
+          ansible.builtin.apt_repository:
+            repo: "deb [arch=amd64] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"
+            state: present
+            filename: hashicorp
+
+        - name: Install Vault package
+          ansible.builtin.apt:
+            name: vault={{ vault_version }}
+            state: present
+            update_cache: yes
+
+      rescue:
+        - name: Display installation failure
+          ansible.builtin.debug:
+            msg: "Vault installation failed. Check repository access and package availability."
+
+        - name: Fail with installation error
+          ansible.builtin.fail:
+            msg: "Failed to install Vault {{ vault_version }}. Verify the version exists in the HashiCorp repository."
 
     - name: Create Vault user and group
-      user:
+      ansible.builtin.user:
         name: "{{ vault_user }}"
         shell: /bin/false
         system: yes
         create_home: no
 
     - name: Create Vault configuration directory
-      file:
+      ansible.builtin.file:
         path: "{{ vault_config_path }}"
         state: directory
         owner: "{{ vault_user }}"
@@ -57,7 +67,7 @@
         mode: '0755'
 
     - name: Create Vault data directory
-      file:
+      ansible.builtin.file:
         path: "{{ vault_data_path }}"
         state: directory
         owner: "{{ vault_user }}"
@@ -108,16 +118,49 @@
         - Reload systemd daemon
         - Restart Vault service
 
-    - name: Enable Vault service
-      ansible.builtin.systemd:
-        name: vault
-        enabled: yes
+    - name: Start and verify Vault service
+      block:
+        - name: Enable Vault service
+          ansible.builtin.systemd:
+            name: vault
+            enabled: yes
 
-    - name: Wait for Vault to be reachable
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: 8200
-        timeout: 30
+        - name: Flush handlers to start Vault
+          ansible.builtin.meta: flush_handlers
+
+        - name: Wait for Vault to be reachable
+          ansible.builtin.wait_for:
+            host: 127.0.0.1
+            port: 8200
+            timeout: 30
+
+      rescue:
+        - name: Get Vault service status
+          ansible.builtin.command: systemctl status vault
+          register: vault_status
+          failed_when: false
+          changed_when: false
+
+        - name: Get Vault journal logs
+          ansible.builtin.command: journalctl -u vault --no-pager -n 50
+          register: vault_logs
+          failed_when: false
+          changed_when: false
+
+        - name: Display Vault service failure details
+          ansible.builtin.debug:
+            msg: |
+              Vault service failed to start.
+
+              Service status:
+              {{ vault_status.stdout | default('Unable to get status') }}
+
+              Journal logs:
+              {{ vault_logs.stdout | default('Unable to get logs') }}
+
+        - name: Fail with service error
+          ansible.builtin.fail:
+            msg: "Vault service failed to start. Check logs above for details."
 
   handlers:
     - name: Reload systemd daemon
