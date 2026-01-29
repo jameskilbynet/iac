@@ -1,0 +1,52 @@
+# vSphere Connection
+vsphere_user     = "administrator@vsphere.local"
+vsphere_password = "YourPasswordHere"
+vsphere_server   = "uk-bhr-p-vc-1.jameskilby.cloud"
+
+# vSphere Infrastructure
+datacenter = "YourDatacenter"
+datastore  = "YourDatastore"
+cluster    = "YourCluster"
+network    = "VM Network"
+vm_folder  = "SQL Servers"
+
+# VM Configuration
+template_name = "Windows-Server-2022-Template"
+vm_name       = "sql-server-01"
+hostname      = "SQLSRV01"
+
+# CPU Configuration (adjust based on workload)
+num_cpus         = 8
+cores_per_socket = 4
+
+# Memory Configuration (32GB recommended minimum for production)
+memory                     = 32768
+memory_reservation_enabled = true
+
+# Disk Configuration (adjust based on database size requirements)
+os_disk_size        = 100  # C: drive
+sql_data_disk_size  = 500  # D: drive for .mdf files
+sql_log_disk_size   = 200  # E: drive for .ldf files
+tempdb_disk_size    = 100  # T: drive for TempDB
+backup_disk_size    = 500  # B: drive for backups (0 to skip)
+
+# Disk provisioning (thick eager zeroed recommended for production)
+thin_provisioned = false
+eagerly_scrub    = true
+
+# Windows Configuration
+workgroup      = "WORKGROUP"
+admin_password = "YourSecurePassword123!"
+timezone       = 085  # GMT timezone
+
+# Network Configuration
+ipv4_address = "192.168.1.100"
+ipv4_netmask = 24
+ipv4_gateway = "192.168.1.1"
+dns_servers  = ["192.168.1.10", "192.168.1.11"]
+
+# Optional: Commands to run after deployment
+# run_once_commands = [
+#   "powershell.exe Set-ExecutionPolicy RemoteSigned -Force",
+#   "powershell.exe Install-WindowsFeature -Name NET-Framework-Core"
+# ]

@@ -1,0 +1,103 @@
+# vSphere Connection Configuration
+vsphere_server   = "uk-bhr-p-vc-1.jameskilby.cloud"
+vsphere_user     = "administrator@vsphere.local"
+vsphere_password = "YourPasswordHere"
+
+# Infrastructure Configuration
+datacenter = "uk-bhr-p-dc-1"
+cluster    = "uk-bhr-p-cl-1"
+datastore  = "vsanDatastore"
+network    = "VM Network"
+vm_folder  = "Production/VCF"
+
+# Resource Pool Configuration
+resource_pool_name         = "Nested-VCF5"
+resource_pool_cpu_reservation    = 0
+resource_pool_memory_reservation = 0
+
+# Nested ESXi Configuration
+esxi_count               = 4
+esxi_hostname_prefix     = "esxi"
+esxi_domain              = "vcf.local"
+esxi_ova_path            = "/path/to/Nested_ESXi8.0u2_Appliance_Template_v1.ova"
+esxi_num_cpus            = 8
+esxi_num_cores_per_socket = 4
+esxi_memory_gb           = 64
+esxi_boot_disk_size_gb   = 32
+esxi_cache_disk_size_gb  = 100
+esxi_capacity_disk_size_gb = 200
+esxi_root_password       = "VMware1!"
+esxi_management_network  = "VCF-Management"
+
+# Static IP addresses for ESXi hosts (optional - leave empty for DHCP)
+esxi_management_ips = [
+  "192.168.100.11",
+  "192.168.100.12",
+  "192.168.100.13",
+  "192.168.100.14"
+]
+
+# Cloud Builder Configuration
+deploy_cloud_builder         = true
+cloud_builder_ova_path       = "/path/to/VMware-Cloud-Builder-5.2.0.0-23480823_OVF10.ova"
+cloud_builder_hostname       = "cloudbuilder"
+cloud_builder_ip             = "192.168.100.50"
+cloud_builder_netmask        = "24"
+cloud_builder_gateway        = "192.168.100.1"
+cloud_builder_num_cpus       = 4
+cloud_builder_memory_gb      = 18
+cloud_builder_root_password  = "VMware1!"
+cloud_builder_admin_password = "VMware1!"
+
+# Network Configuration
+create_vcf_networks = true
+
+vcf_vlan_ids = {
+  management   = 100
+  vmotion      = 101
+  vsan         = 102
+  nsx_tep      = 103
+  nsx_edge_tep = 104
+  vm_network   = 105
+}
+
+vcf_networks = {
+  management = {
+    network = "192.168.100.0"
+    netmask = "24"
+    gateway = "192.168.100.1"
+  }
+  vmotion = {
+    network = "192.168.101.0"
+    netmask = "24"
+  }
+  vsan = {
+    network = "192.168.102.0"
+    netmask = "24"
+  }
+  nsx_tep = {
+    network = "192.168.103.0"
+    netmask = "24"
+  }
+  nsx_edge_tep = {
+    network = "192.168.104.0"
+    netmask = "24"
+  }
+  vm_network = {
+    network = "192.168.105.0"
+    netmask = "24"
+    gateway = "192.168.105.1"
+  }
+}
+
+# DNS and NTP Configuration
+dns_servers = ["8.8.8.8", "8.8.4.4"]
+ntp_servers = ["pool.ntp.org"]
+
+# Tags and Metadata
+environment = "lab"
+tags = {
+  Project     = "Nested-VCF5"
+  ManagedBy   = "Terraform"
+  Environment = "Lab"
+}
