@@ -42,9 +42,8 @@
     healthcheck_poll_retries: "{{ traefik_healthcheck_poll_retries | default(12) }}"
     healthcheck_poll_delay: "{{ traefik_healthcheck_poll_delay | default(5) }}"
 
-    # Dashboard settings (dashboard_domain auto-generated in pre_tasks if not set)
+    # Dashboard settings (dashboard_domain auto-generated in pre_tasks if traefik_dashboard_domain not set)
     dashboard_admin_user: "{{ traefik_dashboard_user | default('admin') }}"
-    dashboard_domain: "{{ traefik_dashboard_domain | default(omit) }}"
 
     # Required variables (no defaults - must be provided):
     # - cloudflare_api_token: Cloudflare API token for DNS challenge
@@ -148,12 +147,10 @@
         msg: "This playbook only supports Ubuntu/Debian"
       when: ansible_facts['os_family'] not in ['Debian']
 
-    - name: Set dashboard domain based on hostname
+    - name: Set dashboard domain
       ansible.builtin.set_fact:
-        dashboard_domain: "{{ ansible_facts['hostname'] }}-dash.{{ wildcard_domain }}"
-      when: 
-        - dashboard_domain is not defined
-        - wildcard_domain is defined
+        dashboard_domain: "{{ traefik_dashboard_domain | default(ansible_facts['hostname'] ~ '-dash.' ~ wildcard_domain) }}"
+      when: wildcard_domain is defined
 
 
     - name: Add user to docker group
