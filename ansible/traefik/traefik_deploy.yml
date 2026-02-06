@@ -363,7 +363,7 @@
           ==========================================
           Container Status: {{ container_info.container.State.Status }}
           Health Status: {{ container_info.container.State.Health.Status | default('N/A') }}
-          Dashboard URL: https://{{ dashboard_domain }}
+          Dashboard URL: https://{{ traefik_dashboard_domain }}
           {% if deploy_test_service | bool %}
           Test Service URL: https://{{ test_service_domain }}
           {% else %}
