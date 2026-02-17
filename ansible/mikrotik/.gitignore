@@ -1,0 +1,3 @@
+# Ignore backup configurations (may contain sensitive data)
+configs/*.rsc
+!configs/.gitkeep
