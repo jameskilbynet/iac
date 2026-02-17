@@ -6,7 +6,7 @@
     truenas_host: "{{ lookup('env', 'TRUENAS_HOST') }}"
     truenas_api_key: "{{ lookup('env', 'TRUENAS_API_KEY') }}"
     truenas_pool: "{{ lookup('env', 'TRUENAS_POOL') | default('tank', true) }}"
-    csv_file: "{{ csv_file_path | default('docker_share_config.csv') }}"
+    csv_file: "{{ csv_file_path | default('share_config.csv') }}"
     truenas_api_url: "https://{{ truenas_host }}/api/v2.0"
     validate_certs: false
 
@@ -148,16 +148,17 @@
 
     - name: Set dataset permissions
       ansible.builtin.uri:
-        url: "{{ truenas_api_url }}/pool/dataset/id/{{ truenas_pool | urlencode }}%2F{{ item.dataset | replace('/', '%2F') }}/permission"
+        url: "{{ truenas_api_url }}/filesystem/setperm"
         method: POST
         headers:
           Authorization: "Bearer {{ truenas_api_key }}"
           Content-Type: "application/json"
         body_format: json
         body:
+          path: "/mnt/{{ truenas_pool }}/{{ item.dataset }}"
           mode: "{{ item.permissions }}"
-          user: "{{ item.owner }}"
-          group: "{{ item.group }}"
+          uid: "{{ item.owner | int }}"
+          gid: "{{ item.group | int }}"
           options:
             recursive: false
             traverse: false

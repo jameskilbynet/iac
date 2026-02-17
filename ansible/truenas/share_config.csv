@@ -22,6 +22,10 @@ docker/immich/upload,immich-upload,Immich photo and video uploads,standard,1M,lz
 docker/immich/library,immich-library,Immich processed library storage,standard,1M,lz4,off,POSIX,1000,1000,770
 docker/immich/db,immich-db,Immich database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
 docker/immich/model-cache,immich-model-cache,Immich ML model cache,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/immich/profile,immich-profile,Immich user profile pictures,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/immich/video,immich-video,Immich encoded video storage,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/immich/thumbs,immich-thumbs,Immich thumbnail storage,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/immich/redis,immich-redis,Immich Redis cache,standard,16K,lz4,off,POSIX,999,999,770
 docker/excalidraw/data,excalidraw-data,Excalidraw application data,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/wordpress/content,wordpress-content,WordPress wp-content directory,standard,128K,lz4,off,POSIX,33,33,770
 docker/wordpress/db,wordpress-db,WordPress database (MySQL/MariaDB),standard,16K,lz4,off,POSIX,999,999,770
@@ -52,6 +56,12 @@ docker/lidarr/config,lidarr-config,Lidarr configuration and database,standard,12
 docker/prowlarr/config,prowlarr-config,Prowlarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/bazarr/config,bazarr-config,Bazarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
 docker/qbittorrent/config,qbittorrent-config,qBittorrent configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/qbittorrent/downloads,qbittorrent-downloads,qBittorrent downloads directory,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/readarr/config,readarr-config,Readarr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/overseerr/config,overseerr-config,Overseerr configuration and database,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/tdarr/config,tdarr-config,Tdarr configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/tdarr/server,tdarr-server,Tdarr server data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/tdarr/transcode-cache,tdarr-transcode-cache,Tdarr transcoding cache,standard,1M,lz4,off,POSIX,1000,1000,770
 docker/nextcloud/data,nextcloud-data,Nextcloud application files,standard,128K,lz4,off,POSIX,33,33,770
 docker/nextcloud/config,nextcloud-config,Nextcloud configuration,standard,16K,lz4,off,POSIX,33,33,770
 docker/nextcloud/apps,nextcloud-apps,Nextcloud custom apps,standard,128K,lz4,off,POSIX,33,33,770
@@ -73,3 +83,45 @@ docker/postiz/db,postiz-db,Postiz database (PostgreSQL),standard,16K,lz4,off,POS
 docker/postiz/redis,postiz-redis,Postiz Redis cache,standard,16K,lz4,off,POSIX,999,999,770
 docker/scrutiny/config,scrutiny-config,Scrutiny configuration and database,standard,128K,lz4,off,POSIX,3000,3000,770
 docker/beszel/data,beszel-data,Beszel monitoring data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/fileflows/data,fileflows-data,FileFlows application data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/fileflows/logs,fileflows-logs,FileFlows logs,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/fileflows/temp,fileflows-temp,FileFlows temporary files,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/fooocus/data,fooocus-data,Fooocus AI image generation data,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/fooocus/checkpoints,fooocus-checkpoints,Fooocus model checkpoints,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/darktable/config,darktable-config,Darktable RAW editor configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/vcf/data,vcf-data,VCF deployment files,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/vcf/config,vcf-config,VCF nginx configuration,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/jameskilbycouk/data,jameskilbycouk-data,WordPress jameskilby.co.uk data,standard,128K,lz4,off,POSIX,33,33,770
+docker/jameskilbycouk/uploads,jameskilbycouk-uploads,WordPress jameskilby.co.uk uploads,standard,1M,lz4,off,POSIX,33,33,770
+docker/jameskilbycouk/config,jameskilbycouk-config,WordPress jameskilby.co.uk config,standard,16K,lz4,off,POSIX,33,33,770
+docker/jameskilbycouk/db,jameskilbycouk-db,WordPress jameskilby.co.uk database,standard,16K,lz4,off,POSIX,999,999,770
+docker/consul/data,consul-data,Consul service discovery data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/consul/config,consul-config,Consul configuration,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/consul/templates,consul-templates,Consul template outputs,standard,16K,lz4,off,POSIX,1000,1000,770
+docker/paperlessai/config,paperlessai-config,Paperless AI configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/paperlessai/data,paperlessai-data,Paperless AI data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/paperlessai/logs,paperlessai-logs,Paperless AI logs,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/poste/data,poste-data,Poste.io mail server data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/certwarden/data,certwarden-data,CertWarden certificate manager data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/youtube-dl/config,youtube-dl-config,YouTube downloader configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/youtube-dl/downloads,youtube-dl-downloads,YouTube downloaded files,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/dupeguru/config,dupeguru-config,DupeGuru configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/metamcp/data,metamcp-data,MetaMCP application data,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/metamcp/db,metamcp-db,MetaMCP database (PostgreSQL),standard,16K,lz4,off,POSIX,999,999,770
+docker/codeprojectai/data,codeprojectai-data,CodeProject AI configuration,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/codeprojectai/modules,codeprojectai-modules,CodeProject AI modules,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/codeprojectai/logs,codeprojectai-logs,CodeProject AI logs,standard,128K,lz4,off,POSIX,1000,1000,770
+docker/codeprojectai/models,codeprojectai-models,CodeProject AI models,standard,1M,lz4,off,POSIX,1000,1000,770
+docker/plausible/db,plausible-db,Plausible PostgreSQL database,standard,16K,lz4,off,POSIX,999,999,770
+docker/plausible/events,plausible-events,Plausible ClickHouse events,standard,16K,lz4,off,POSIX,101,101,770
+docker/plausible/logs,plausible-logs,Plausible ClickHouse logs,standard,128K,lz4,off,POSIX,101,101,770
+docker/plausible/data,plausible-data,Plausible application data,standard,128K,lz4,off,POSIX,1000,1000,770
+media,media,Media library root directory,standard,1M,off,off,POSIX,1000,1000,770
+media/films,media-films,Movie collection for Plex,standard,1M,off,off,POSIX,1000,1000,770
+media/tv,media-tv,TV shows collection for Plex,standard,1M,off,off,POSIX,1000,1000,770
+media/music,media-music,Music collection for Plex,standard,1M,off,off,POSIX,1000,1000,770
+media/f1,media-f1,Formula 1 content for Plex,standard,1M,off,off,POSIX,1000,1000,770
+documents,documents,Personal documents storage,standard,128K,lz4,off,POSIX,1000,1000,770
+photos,photos,Personal photo storage,standard,1M,off,off,POSIX,1000,1000,770
+photos/raw,photos-raw,RAW photo files from camera,standard,1M,off,off,POSIX,1000,1000,770
+photos/processed,photos-processed,Edited and processed photos,standard,1M,off,off,POSIX,1000,1000,770
