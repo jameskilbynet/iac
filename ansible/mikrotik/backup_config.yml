@@ -1,0 +1,87 @@
+---
+- name: Backup Mikrotik device configurations
+  hosts: mikrotik_switches
+  gather_facts: no
+
+  vars:
+    backup_dir: "{{ playbook_dir }}/configs"
+    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+
+  tasks:
+    - name: Ensure backup directory exists
+      delegate_to: localhost
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: '0755'
+      run_once: true
+
+    - name: Export full configuration
+      community.routeros.command:
+        commands:
+          - /export
+      register: config_export
+
+    - name: Export compact configuration (without defaults)
+      community.routeros.command:
+        commands:
+          - /export compact
+      register: config_compact
+
+    - name: Get system identity
+      community.routeros.command:
+        commands:
+          - /system identity print
+      register: system_identity
+
+    - name: Get system resource info
+      community.routeros.command:
+        commands:
+          - /system resource print
+      register: system_resources
+
+    - name: Get RouterOS version
+      community.routeros.command:
+        commands:
+          - /system package print
+      register: system_packages
+
+    - name: Save full configuration to file
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: |
+          # Mikrotik Configuration Backup
+          # Device: {{ inventory_hostname }} ({{ ansible_host }})
+          # Date: {{ timestamp }}
+          # Identity: {{ system_identity.stdout[0] | default('Unknown') }}
+          # Resources: {{ system_resources.stdout[0] | default('Unknown') }}
+          #
+          {{ config_export.stdout[0] }}
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}_full_{{ timestamp }}.rsc"
+        mode: '0644'
+
+    - name: Save compact configuration to file
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: |
+          # Mikrotik Compact Configuration Backup
+          # Device: {{ inventory_hostname }} ({{ ansible_host }})
+          # Date: {{ timestamp }}
+          #
+          {{ config_compact.stdout[0] }}
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}_compact_{{ timestamp }}.rsc"
+        mode: '0644'
+
+    - name: Save latest configuration (symlink-like copy)
+      delegate_to: localhost
+      ansible.builtin.copy:
+        content: "{{ config_compact.stdout[0] }}"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}_latest.rsc"
+        mode: '0644'
+
+    - name: Display backup summary
+      ansible.builtin.debug:
+        msg: |
+          Backup completed for {{ inventory_hostname }}
+          - Full config: {{ backup_dir }}/{{ inventory_hostname }}_full_{{ timestamp }}.rsc
+          - Compact config: {{ backup_dir }}/{{ inventory_hostname }}_compact_{{ timestamp }}.rsc
