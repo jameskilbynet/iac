@@ -1,0 +1,95 @@
+services:
+  # Hoarder - Personal Knowledge Management
+  hoarder:
+    image: ghcr.io/hoarder-app/hoarder:${HOARDER_VERSION:-release}
+    container_name: hoarder-hoarder
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - traefik
+    volumes:
+      - hoarder_data:/data
+    env_file:
+      - .env
+    environment:
+      # User/Group IDs for proper file permissions
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Core Hoarder configuration
+      - DATA_DIR=${DATA_DIR}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - DISABLE_SIGNUPS=${DISABLE_SIGNUPS}
+      # Service dependencies
+      - MEILI_ADDR=${MEILI_ADDR}
+      - BROWSER_WEB_URL=${BROWSER_WEB_URL}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      # Optional settings
+      - MAX_ASSET_SIZE_MB=${MAX_ASSET_SIZE_MB}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hoarder.rule=Host(`hoarder.example.com`)"
+      - "traefik.http.routers.hoarder.entrypoints=websecure"
+      - "traefik.http.routers.hoarder.tls=true"
+      - "traefik.http.services.hoarder.loadbalancer.server.port=3000"
+      - "kuma.hoarder.http.name=Hoarder"
+      - "kuma.hoarder.http.url=https://hoarder.example.com/"
+      - "kuma.hoarder.http.interval=60"
+    depends_on:
+      - meilisearch
+      - chrome
+
+  # Chrome for web scraping and screenshot generation
+  chrome:
+    image: gcr.io/zenika-hub/alpine-chrome:123
+    container_name: hoarder-chrome
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - traefik
+    command:
+      - --no-sandbox
+      - --disable-gpu
+      - --disable-dev-shm-usage
+      - --remote-debugging-address=0.0.0.0
+      - --remote-debugging-port=9222
+      - --hide-scrollbars
+
+  # Meilisearch for full-text search
+  meilisearch:
+    image: getmeili/meilisearch:v1.11.1
+    container_name: hoarder-meilisearch
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+    networks:
+      - traefik
+    env_file:
+      - .env
+    environment:
+      - MEILI_NO_ANALYTICS=true
+    volumes:
+      - meilisearch_data:/meili_data
+
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  # Hoarder data storage (local - SQLite requires local filesystem for locking)
+  hoarder_data:
+
+  # Meilisearch data storage (local for performance)
+  meilisearch_data:

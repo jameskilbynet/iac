@@ -1,0 +1,66 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'aistack-homelab'
+
+# Alertmanager configuration (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+# rule_files:
+#   - "alert.rules"
+
+scrape_configs:
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    scrape_interval: 10s
+    metrics_path: /metrics
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Jaeger metrics (if enabled)
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Docker container metrics (if cAdvisor is available)
+  # - job_name: 'cadvisor'
+  #   static_configs:
+  #     - targets: ['cadvisor:8080']
+
+  # Ollama metrics (if available via custom exporter)
+  # - job_name: 'ollama'
+  #   static_configs:
+  #     - targets: ['ollama:8080']
+  #   metrics_path: /metrics
+
+  # Open WebUI metrics (if available)
+  # - job_name: 'open-webui'
+  #   static_configs:
+  #     - targets: ['open-webui:8080']
+  #   metrics_path: /api/metrics
+
+  # SearxNG metrics (if available)
+  # - job_name: 'searxng'
+  #   static_configs:
+  #     - targets: ['searxng:8080']
+  #   metrics_path: /stats
+
+  # Traefik metrics (from main traefik instance)
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['traefik:8082']  # Adjust port based on your Traefik metrics configuration
+    metrics_path: /metrics
+    scrape_interval: 30s

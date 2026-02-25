@@ -1,0 +1,39 @@
+use_default_settings: true
+
+general:
+  instance_name: "aistack-searxng"
+  
+server:
+  limiter: false
+  public_instance: false
+  secret_key: "change-me"
+  trust_x_forwarded_for: false
+  image_proxy: true
+  
+ui:
+  static_use_hash: true
+  
+search:
+  safe_search: 0
+  autocomplete: "google"
+  default_lang: "en"
+  formats:
+    - html
+    - json
+
+botdetection:
+  enabled: false
+  
+engines:
+  - name: google
+    engine: google
+    shortcut: g
+  - name: duckduckgo
+    engine: duckduckgo
+    shortcut: ddg
+  - name: wikipedia
+    engine: wikipedia
+    shortcut: wp
+  - name: brave
+    engine: brave
+    shortcut: br

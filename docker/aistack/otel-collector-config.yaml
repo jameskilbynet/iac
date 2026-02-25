@@ -1,0 +1,95 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          static_configs:
+            - targets: ['localhost:8889']
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+  
+  # Add resource attributes
+  resource:
+    attributes:
+      - key: environment
+        value: "homelab"
+        action: upsert
+      - key: cluster
+        value: "aistack"
+        action: upsert
+
+  # Filter sensitive data
+  filter:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.url"] != nil and IsMatch(attributes["http.url"], ".*password.*")'
+        - 'attributes["http.request.header.authorization"] != nil'
+    logs:
+      log_record:
+        - 'body != nil and IsMatch(body, ".*password.*")'
+        - 'body != nil and IsMatch(body, ".*token.*")'
+
+exporters:
+  # OTLP exporter for Jaeger (modern approach - replaces deprecated jaeger exporter)
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Prometheus for metrics
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    send_timestamps: true
+    metric_expiration: 180m
+
+  # OTLP for external systems (optional)
+  # otlp:
+  #   endpoint: "https://external-otel-collector:4317"
+  #   tls:
+  #     insecure: false
+
+  # Debug exporter for debugging (replaces deprecated logging exporter)
+  debug:
+    verbosity: normal
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: basic
+  
+  extensions: [health_check]
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, filter]
+      exporters: [otlp/jaeger, debug]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, debug]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, filter]
+      exporters: [debug]

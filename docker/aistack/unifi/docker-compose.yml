@@ -1,0 +1,91 @@
+---
+services:
+  unifi-db:
+    image: mongo:7.0
+    container_name: unifi-db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-root}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASS:-changeme}
+      - MONGO_USER=${MONGO_USER:-unifi}
+      - MONGO_PASS=${MONGO_PASS:-unifipass}
+    volumes:
+      - unifi-db:/data/db
+      - ./init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - unifi-internal
+
+  unifi-controller:
+    image: linuxserver/unifi-network-application 
+    container_name: unifi-controller
+    depends_on:
+      unifi-db:
+        condition: service_healthy
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Etc/UTC}
+      - MEM_LIMIT=${MEM_LIMIT:-1024}
+      - MEM_STARTUP=${MEM_STARTUP:-1024}
+      - MONGO_USER=${MONGO_USER:-unifi}
+      - MONGO_PASS=${MONGO_PASS:-unifipass}
+      - MONGO_HOST=unifi-db
+      - MONGO_PORT=27017
+      - MONGO_DBNAME=unifi
+    volumes:
+      - ./config:/config
+    ports:
+      - "8443:8443"    # Web UI (HTTPS)
+      - "3478:3478/udp" # STUN
+      - "10001:10001/udp" # Device discovery
+      - "8080:8080"    # Device communication
+      - "8843:8843"    # Guest portal (HTTPS)
+      - "8880:8880"    # Guest portal (HTTP)
+      - "6789:6789"    # Mobile throughput test
+      - "5514:5514/udp" # Remote syslog
+      - "1900:1900/udp" # L2 discovery (optional)
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:8443/status || exit 1"]
+      interval: 2m
+      timeout: 10s
+      retries: 3
+      start_period: 2m
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+    labels:
+      - "com.example.description=UniFi Network Controller"
+      - "traefik.enable=true"
+      - "traefik.http.routers.unifi.rule=Host(`unifi.example.com`)"
+      - "traefik.http.routers.unifi.entrypoints=websecure"
+      - "traefik.http.routers.unifi.tls=true"
+      - "traefik.http.routers.unifi.tls.certresolver=cloudflare"
+      - "traefik.http.services.unifi.loadbalancer.server.port=8443"
+      - "traefik.http.services.unifi.loadbalancer.server.scheme=https"
+      - "traefik.http.serversTransports.unifi-transport.insecureSkipVerify=true"
+      - "traefik.http.services.unifi.loadbalancer.serversTransport=unifi-transport@docker"
+      - "traefik.http.routers.unifi.tls.options=default"
+    networks:
+      - traefik
+      - unifi-internal
+
+volumes:
+  unifi-db:
+
+networks:
+  traefik:
+    external: true
+  unifi-internal:
+    internal: true

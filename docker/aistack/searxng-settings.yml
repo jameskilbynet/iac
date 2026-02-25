@@ -1,0 +1,31 @@
+# SearXNG Configuration for OpenWebUI Integration
+use_default_settings: true
+
+# Enable JSON format for API access
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: ""
+  formats:
+    - html
+    - json
+    - csv
+    - rss
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  limiter: false
+  public_instance: false
+  http_protocol_version: "1.0"
+
+ui:
+  static_use_hash: false
+  default_theme: simple
+  center_alignment: false
+
+general:
+  debug: false
+  instance_name: "SearXNG"
+  contact_url: false
+  enable_metrics: false
