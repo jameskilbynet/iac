@@ -4,7 +4,12 @@ services:
     image: ollama/ollama:0.17.0
     container_name: aistack-ollama
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c", "sleep 30 && exec ollama serve"]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
     deploy:
       resources:
         limits:
@@ -63,6 +68,12 @@ services:
     image: ghcr.io/open-webui/open-webui:v0.8.5
     container_name: aistack-open-webui
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -96,7 +107,7 @@ services:
       - IMAGE_GENERATION_ENGINE=comfyui
       - COMFYUI_BASE_URL=http://comfyui:8188
       - AUDIO_STT_ENGINE=openai
-      - AUDIO_STT_OPENAI_API_BASE_URL=http://whishper:8082/v1
+      - AUDIO_STT_OPENAI_API_BASE_URL=http://whishper:8080/v1
       - ENABLE_COMMUNITY_SHARING=false
       - TASK_MODEL=${INFERENCE_TEXT_MODEL:-llama3.1:8b}
       - ENABLE_ADMIN_EXPORT=true
@@ -121,10 +132,14 @@ services:
       - "kuma.openwebui.http.url=https://chat.example.com/"
       - "kuma.openwebui.http.interval=60"
     depends_on:
-      - ollama
-      - qdrant
-      - tika
-      - searxng
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      tika:
+        condition: service_started
+      searxng:
+        condition: service_started
     extra_hosts:
       - host.docker.internal:host-gateway
 
@@ -133,6 +148,12 @@ services:
     image: ghcr.io/ai-dock/comfyui:latest-cuda
     container_name: aistack-comfyui
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8188/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
     networks:
       - traefik
       - aistack-internal
@@ -184,6 +205,12 @@ services:
     image: pluja/whishper:v3.1.4
     container_name: aistack-whishper
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -200,6 +227,10 @@ services:
     environment:
       - WHISPER_MODELS=${WHISPER_MODELS:-base}
       - WHISPER_MODELS_DIR=/app/models
+      - PUBLIC_INTERNAL_API_HOST=http://127.0.0.1:8080
+      - PUBLIC_API_HOST=
+      - PUBLIC_WHISHPER_PROFILE=cpu
+      - WHISHPER_DB_URI=mongodb://mongo:27017/whishper
     logging:
       driver: "json-file"
       options:
@@ -213,21 +244,75 @@ services:
       - whishper_models:/app/models
       - whishper_logs:/var/log/whishper
     labels:
+      # Frontend (catch-all)
       - "traefik.enable=true"
       - "traefik.http.routers.whishper.rule=Host(`whishper.example.com`)"
       - "traefik.http.routers.whishper.entrypoints=websecure"
       - "traefik.http.routers.whishper.tls=true"
       - "traefik.http.routers.whishper.tls.certresolver=cloudflare"
-      - "traefik.http.services.whishper.loadbalancer.server.port=8082"
+      - "traefik.http.routers.whishper.service=whishper"
+      - "traefik.http.services.whishper.loadbalancer.server.port=3000"
+      # Backend API and WebSocket
+      - "traefik.http.routers.whishper-api.rule=Host(`whishper.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
+      - "traefik.http.routers.whishper-api.entrypoints=websecure"
+      - "traefik.http.routers.whishper-api.tls=true"
+      - "traefik.http.routers.whishper-api.tls.certresolver=cloudflare"
+      - "traefik.http.routers.whishper-api.service=whishper-api"
+      - "traefik.http.services.whishper-api.loadbalancer.server.port=8080"
       - "kuma.whishper.http.name=Whishper"
       - "kuma.whishper.http.url=https://whishper.example.com/"
       - "kuma.whishper.http.interval=60"
+
+  # MongoDB - Database for Whishper
+  mongo:
+    image: mongo:7
+    container_name: aistack-mongo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - mongo_data:/data/db
+    labels:
+      - "traefik.enable=false"
 
   # n8n - Workflow automation
   n8n:
     image: n8nio/n8n:2.10.0
     container_name: aistack-n8n
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -277,15 +362,24 @@ services:
       - "kuma.n8n.http.url=https://n8n.example.com/"
       - "kuma.n8n.http.interval=60"
     depends_on:
-      - postgres
-      - ollama
-      - qdrant
+      postgres:
+        condition: service_started
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_started
 
   # PostgreSQL - Relational database
   postgres:
     image: postgres:16.12-alpine
     container_name: aistack-postgres
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     deploy:
       resources:
         limits:
@@ -297,7 +391,6 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - traefik
       - aistack-internal
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
@@ -314,18 +407,19 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - postgres_data:/var/lib/postgresql/data
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.postgres.rule=Host(`postgres.example.com`)"
-      - "traefik.http.routers.postgres.entrypoints=websecure"
-      - "traefik.http.routers.postgres.tls=true"
-      - "traefik.http.routers.postgres.tls.certresolver=cloudflare"
-      - "traefik.http.services.postgres.loadbalancer.server.port=5432"
+      - "traefik.enable=false"
 
   # Qdrant - Vector database for RAG
   qdrant:
     image: qdrant/qdrant:v1.17.0
     container_name: aistack-qdrant
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -337,7 +431,6 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - traefik
       - aistack-internal
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
@@ -354,21 +447,19 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - qdrant_storage:/qdrant/storage
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.qdrant.rule=Host(`qdrant.example.com`)"
-      - "traefik.http.routers.qdrant.entrypoints=websecure"
-      - "traefik.http.routers.qdrant.tls=true"
-      - "traefik.http.routers.qdrant.tls.certresolver=cloudflare"
-      - "traefik.http.services.qdrant.loadbalancer.server.port=6333"
-      - "kuma.qdrant.http.name=Qdrant"
-      - "kuma.qdrant.http.url=https://qdrant.example.com/"
-      - "kuma.qdrant.http.interval=60"
+      - "traefik.enable=false"
 
   # Apache Tika - Document parsing for RAG
   tika:
     image: apache/tika:2.5.0
     container_name: aistack-tika
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/9998' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -380,7 +471,6 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - traefik
       - aistack-internal
     logging:
       driver: "json-file"
@@ -391,13 +481,6 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tika.rule=Host(`tika.example.com`)"
-      - "traefik.http.routers.tika.entrypoints=websecure"
-      - "traefik.http.routers.tika.tls=true"
-      - "traefik.http.routers.tika.tls.certresolver=cloudflare"
-      - "traefik.http.services.tika.loadbalancer.server.port=9998"
 
   # SearxNG
   searxng:
@@ -432,12 +515,31 @@ services:
       - /etc/timezone:/etc/timezone:ro
       - /opt/aistack/searxng/settings.yml:/etc/searxng/settings.yml:ro
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.searxng.rule=Host(`searxng.example.com`)"
+      - "traefik.http.routers.searxng.entrypoints=websecure"
+      - "traefik.http.routers.searxng.tls=true"
+      - "traefik.http.routers.searxng.tls.certresolver=cloudflare"
+      - "traefik.http.services.searxng.loadbalancer.server.port=8080"
 
   # Jaeger - Distributed tracing backend
   jaeger:
     image: jaegertracing/all-in-one:1.76.0
     container_name: aistack-jaeger
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:16686/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -483,6 +585,12 @@ services:
     image: prom/prometheus:v3.5.1
     container_name: aistack-prometheus
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -529,6 +637,12 @@ services:
     image: grafana/grafana:12.3.4
     container_name: aistack-grafana
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -543,7 +657,7 @@ services:
       - traefik
       - aistack-internal
     environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_USER
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=https://grafana.example.com
@@ -570,8 +684,10 @@ services:
       - "kuma.aistackgrafana.http.url=https://grafana.example.com/"
       - "kuma.aistackgrafana.http.interval=60"
     depends_on:
-      - prometheus
-      - jaeger
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
 
 networks:
   traefik:
@@ -605,6 +721,9 @@ volumes:
   # PostgreSQL database storage
   postgres_data:
   
+  # MongoDB data for Whishper
+  mongo_data:
+
   # n8n workflow data
   n8n_data:
   
