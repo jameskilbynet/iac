@@ -219,18 +219,28 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
     security_opt:
       - no-new-privileges:true
+    dns:
+      - 192.168.10.250
+      - 192.168.10.251
     networks:
       - traefik
       - aistack-internal
     environment:
-      - WHISPER_MODELS=${WHISPER_MODELS:-base}
+      - WHISPER_MODELS=${WHISPER_MODELS:-tiny,small}
       - WHISPER_MODELS_DIR=/app/models
       - PUBLIC_INTERNAL_API_HOST=http://127.0.0.1:8080
       - PUBLIC_API_HOST=
-      - PUBLIC_WHISHPER_PROFILE=cpu
-      - WHISHPER_DB_URI=mongodb://mongo:27017/whishper
+      - PUBLIC_WHISHPER_PROFILE=cuda
+      - WHISHPER_DB_URI=mongodb://root:example@mongo:27017/whishper?authSource=admin
+      - LIBRETRANSLATE_HOST=
+    extra_hosts:
+      - "translate:127.0.0.1"
     logging:
       driver: "json-file"
       options:
@@ -241,24 +251,16 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - whishper_data:/app/data
+      - whishper_uploads:/app/uploads
       - whishper_models:/app/models
       - whishper_logs:/var/log/whishper
     labels:
-      # Frontend (catch-all)
       - "traefik.enable=true"
       - "traefik.http.routers.whishper.rule=Host(`whishper.example.com`)"
       - "traefik.http.routers.whishper.entrypoints=websecure"
       - "traefik.http.routers.whishper.tls=true"
       - "traefik.http.routers.whishper.tls.certresolver=cloudflare"
-      - "traefik.http.routers.whishper.service=whishper"
-      - "traefik.http.services.whishper.loadbalancer.server.port=3000"
-      # Backend API and WebSocket
-      - "traefik.http.routers.whishper-api.rule=Host(`whishper.example.com`) && (PathPrefix(`/api`) || PathPrefix(`/ws`))"
-      - "traefik.http.routers.whishper-api.entrypoints=websecure"
-      - "traefik.http.routers.whishper-api.tls=true"
-      - "traefik.http.routers.whishper-api.tls.certresolver=cloudflare"
-      - "traefik.http.routers.whishper-api.service=whishper-api"
-      - "traefik.http.services.whishper-api.loadbalancer.server.port=8080"
+      - "traefik.http.services.whishper.loadbalancer.server.port=80"
       - "kuma.whishper.http.name=Whishper"
       - "kuma.whishper.http.url=https://whishper.example.com/"
       - "kuma.whishper.http.interval=60"
@@ -712,6 +714,7 @@ volumes:
   
   # Whishper data and models - local volumes
   whishper_data:
+  whishper_uploads:
   whishper_models:
   whishper_logs:
   
