@@ -1,5 +1,9 @@
 # Docker Projects
 
+NOTE: This directory is auto-generated from the private `jameskilbynet/docker` repo via a GitHub Actions workflow that sanitises configs (removes server names, usernames, passwords, and other secrets) before publishing here.
+
+Do not edit the generated service directories by hand — make changes in the `docker` repo and re-run the publish workflow.
+
 This directory contains Docker-based projects and configurations for containerized applications.
 
 ## Overview
