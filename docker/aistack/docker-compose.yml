@@ -1,7 +1,7 @@
 services:
   # Ollama with OpenTelemetry support
   ollama:
-    image: ollama/ollama:0.17.0
+    image: ollama/ollama:0.17.5
     container_name: aistack-ollama
     restart: unless-stopped
     healthcheck:
@@ -65,7 +65,7 @@ services:
 
   # Open WebUI with OpenTelemetry support
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.8.5
+    image: ghcr.io/open-webui/open-webui:v0.8.8
     container_name: aistack-open-webui
     restart: unless-stopped
     healthcheck:
@@ -111,6 +111,7 @@ services:
       - ENABLE_COMMUNITY_SHARING=false
       - TASK_MODEL=${INFERENCE_TEXT_MODEL:-llama3.1:8b}
       - ENABLE_ADMIN_EXPORT=true
+      - TERMINAL_SERVER_CONNECTIONS=[{"id":"aistack-terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY}","name":"AI Stack Terminal","auth_type":"bearer","config":{"access_grants":[]}}]
     logging:
       driver: "json-file"
       options:
@@ -139,6 +140,8 @@ services:
       tika:
         condition: service_started
       searxng:
+        condition: service_started
+      open-terminal:
         condition: service_started
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -306,7 +309,7 @@ services:
 
   # n8n - Workflow automation
   n8n:
-    image: n8nio/n8n:2.10.0
+    image: n8nio/n8n:2.11.0
     container_name: aistack-n8n
     restart: unless-stopped
     healthcheck:
@@ -373,7 +376,7 @@ services:
 
   # PostgreSQL - Relational database
   postgres:
-    image: postgres:16.12-alpine
+    image: postgres:16.13-alpine
     container_name: aistack-postgres
     restart: unless-stopped
     healthcheck:
@@ -453,7 +456,7 @@ services:
 
   # Apache Tika - Document parsing for RAG
   tika:
-    image: apache/tika:2.5.0
+    image: apache/tika:3.2.3.0
     container_name: aistack-tika
     restart: unless-stopped
     healthcheck:
@@ -584,7 +587,7 @@ services:
 
   # Prometheus - Metrics collection and storage
   prometheus:
-    image: prom/prometheus:v3.5.1
+    image: prom/prometheus:v3.10.0
     container_name: aistack-prometheus
     restart: unless-stopped
     healthcheck:
@@ -636,7 +639,7 @@ services:
 
   # Grafana - Visualization and dashboards
   grafana:
-    image: grafana/grafana:12.3.4
+    image: grafana/grafana:12.4.0
     container_name: aistack-grafana
     restart: unless-stopped
     healthcheck:
@@ -659,7 +662,7 @@ services:
       - traefik
       - aistack-internal
     environment:
-      - GF_SECURITY_ADMIN_USER
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_ROOT_URL=https://grafana.example.com
@@ -691,12 +694,57 @@ services:
       jaeger:
         condition: service_started
 
+  # Open Terminal - Shell execution for Open WebUI
+  open-terminal:
+    image: ghcr.io/open-webui/open-terminal:latest
+    container_name: aistack-open-terminal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - OPEN_TERMINAL_API_KEY=${OPEN_TERMINAL_API_KEY}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - open_terminal_data:/home/user
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-terminal.rule=Host(`terminal.example.com`)"
+      - "traefik.http.routers.open-terminal.entrypoints=websecure"
+      - "traefik.http.routers.open-terminal.tls=true"
+      - "traefik.http.routers.open-terminal.tls.certresolver=cloudflare"
+      - "traefik.http.services.open-terminal.loadbalancer.server.port=8000"
+      - "kuma.openterminal.http.name=Open Terminal"
+      - "kuma.openterminal.http.url=https://terminal.example.com/health"
+      - "kuma.openterminal.http.interval=60"
+
 networks:
   traefik:
     external: true
   aistack-internal:
     driver: bridge
-    internal: false
+    internal: true
     ipam:
       driver: default
       config:
@@ -729,6 +777,9 @@ volumes:
 
   # n8n workflow data
   n8n_data:
+  
+  # Open Terminal data
+  open_terminal_data:
   
   # Monitoring Data Volumes (SMB for persistence)
   jaeger_data:
