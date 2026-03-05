@@ -3,6 +3,18 @@
   hosts: all
   gather_facts: yes
   become: yes
+  serial: 1
+
+  pre_tasks:
+    - name: Check available disk space on /
+      ansible.builtin.shell: df / | awk 'NR==2 {print $5}' | tr -d '%'
+      register: disk_usage
+      changed_when: false
+
+    - name: Fail if disk usage is above 85%
+      ansible.builtin.fail:
+        msg: "Disk usage on {{ inventory_hostname }} is {{ disk_usage.stdout }}% — aborting patch to avoid filling disk during upgrade"
+      when: disk_usage.stdout | int > 85
 
   tasks:
     - name: Update apt-get repo and cache
