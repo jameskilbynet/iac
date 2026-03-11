@@ -2,6 +2,7 @@ apiVersion: 1
 
 datasources:
   - name: Prometheus
+    uid: prometheus
     type: prometheus
     access: proxy
     url: http://prometheus:9090
@@ -13,23 +14,16 @@ datasources:
       httpMethod: POST
 
   - name: Jaeger
+    uid: jaeger
     type: jaeger
     access: proxy
     url: http://jaeger:16686
     editable: true
     jsonData:
-      tracesToLogsV2:
-        datasourceUid: 'loki'
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '-1h'
-        filterByTraceID: false
-        filterBySpanID: false
-        customQuery: true
-        query: '{container="${__span.tags.container}"} |= "${__trace.traceID}"'
       tracesToMetrics:
-        datasourceUid: 'Prometheus'
-        spanStartTimeShift: '1h'
-        spanEndTimeShift: '-1h'
+        datasourceUid: 'prometheus'
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
         queries:
           - name: 'Request Rate'
             query: 'rate(http_requests_total{service="${__span.tags["service.name"]}"}[1m])'

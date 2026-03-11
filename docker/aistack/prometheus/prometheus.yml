@@ -16,51 +16,41 @@ global:
 #   - "alert.rules"
 
 scrape_configs:
-  # OpenTelemetry Collector metrics
-  - job_name: 'otel-collector'
-    static_configs:
-      - targets: ['otel-collector:8889']
-    scrape_interval: 10s
-    metrics_path: /metrics
-
   # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # Jaeger metrics (if enabled)
+  # OpenTelemetry Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8889']
+    scrape_interval: 10s
+
+  # Jaeger v2 metrics (Prometheus endpoint on port 8888)
   - job_name: 'jaeger'
     static_configs:
-      - targets: ['jaeger:14269']
-    metrics_path: /metrics
+      - targets: ['jaeger:8888']
     scrape_interval: 30s
 
-  # Docker container metrics (if cAdvisor is available)
-  # - job_name: 'cadvisor'
-  #   static_configs:
-  #     - targets: ['cadvisor:8080']
-
-  # Ollama metrics (if available via custom exporter)
-  # - job_name: 'ollama'
-  #   static_configs:
-  #     - targets: ['ollama:8080']
-  #   metrics_path: /metrics
-
-  # Open WebUI metrics (if available)
-  # - job_name: 'open-webui'
-  #   static_configs:
-  #     - targets: ['open-webui:8080']
-  #   metrics_path: /api/metrics
-
-  # SearxNG metrics (if available)
-  # - job_name: 'searxng'
-  #   static_configs:
-  #     - targets: ['searxng:8080']
-  #   metrics_path: /stats
+  # NVIDIA GPU Exporter (nvidia-smi based metrics)
+  - job_name: 'nvidia-gpu'
+    static_configs:
+      - targets: ['nvidia-gpu-exporter:9835']
+    scrape_interval: 15s
 
   # Traefik metrics (from main traefik instance)
-  - job_name: 'traefik'
-    static_configs:
-      - targets: ['traefik:8082']  # Adjust port based on your Traefik metrics configuration
-    metrics_path: /metrics
-    scrape_interval: 30s
+  # NOTE: Requires adding metrics.prometheus config to Traefik's traefik.yml:
+  #   metrics:
+  #     prometheus:
+  #       addEntryPointsLabels: true
+  #       addRoutersLabels: true
+  #       addServicesLabels: true
+  #       entryPoint: metrics
+  #   entryPoints:
+  #     metrics:
+  #       address: ":8082"
+  # - job_name: 'traefik'
+  #   static_configs:
+  #     - targets: ['traefik:8082']
+  #   scrape_interval: 30s

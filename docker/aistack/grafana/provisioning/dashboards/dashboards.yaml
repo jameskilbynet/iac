@@ -2,6 +2,7 @@ apiVersion: 1
 
 providers:
   - name: 'aistack-dashboards'
+    orgId: 1
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10
