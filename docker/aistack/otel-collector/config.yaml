@@ -1,0 +1,69 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+  memory_limiter:
+    limit_mib: 512
+  resource:
+    attributes:
+      - key: environment
+        value: "homelab"
+        action: upsert
+      - key: cluster
+        value: "aistack"
+        action: upsert
+  filter:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.url"] != nil and IsMatch(attributes["http.url"], ".*password.*")'
+        - 'attributes["http.request.header.authorization"] != nil'
+    logs:
+      log_record:
+        - 'body != nil and IsMatch(body, ".*password.*")'
+        - 'body != nil and IsMatch(body, ".*token.*")'
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    send_timestamps: true
+    metric_expiration: 180m
+  debug:
+    verbosity: normal
+
+service:
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: basic
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, filter]
+      exporters: [otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource, filter]
+      exporters: [debug]

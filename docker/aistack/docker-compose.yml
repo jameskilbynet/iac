@@ -1,7 +1,7 @@
 services:
-  # Ollama with OpenTelemetry support
+  # Ollama - LLM inference server
   ollama:
-    image: ollama/ollama:0.17.5
+    image: ollama/ollama:0.17.7
     container_name: aistack-ollama
     restart: unless-stopped
     healthcheck:
@@ -27,8 +27,6 @@ services:
       - PGID=${PGID:-1000}
       - OLLAMA_KEEP_ALIVE=1h
       - OLLAMA_ORIGINS=https://ollama.example.com,https://chat.example.com,https://n8n.example.com
-      - ENABLE_IMAGE_GENERATION=True
-      - COMFYUI_BASE_URL=http://comfyui:8188
       - OLLAMA_NUM_PARALLEL=2
       - OLLAMA_MAX_LOADED_MODELS=3
       - OLLAMA_NUM_GPU=1
@@ -65,7 +63,7 @@ services:
 
   # Open WebUI with OpenTelemetry support
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.8.8
+    image: ghcr.io/open-webui/open-webui:v0.8.10
     container_name: aistack-open-webui
     restart: unless-stopped
     healthcheck:
@@ -111,6 +109,12 @@ services:
       - ENABLE_COMMUNITY_SHARING=false
       - TASK_MODEL=${INFERENCE_TEXT_MODEL:-llama3.1:8b}
       - ENABLE_ADMIN_EXPORT=true
+      # OpenTelemetry
+      - ENABLE_OTEL=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=open-webui
+      - OTEL_TRACES_EXPORTER=otlp
       - TERMINAL_SERVER_CONNECTIONS=[{"id":"aistack-terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY}","name":"AI Stack Terminal","auth_type":"bearer","config":{"access_grants":[]}}]
     logging:
       driver: "json-file"
@@ -142,6 +146,8 @@ services:
       searxng:
         condition: service_started
       open-terminal:
+        condition: service_started
+      otel-collector:
         condition: service_started
     extra_hosts:
       - host.docker.internal:host-gateway
@@ -534,13 +540,13 @@ services:
       - "traefik.http.routers.searxng.tls.certresolver=cloudflare"
       - "traefik.http.services.searxng.loadbalancer.server.port=8080"
 
-  # Jaeger - Distributed tracing backend
+  # Jaeger v2 - Distributed tracing backend (based on OpenTelemetry Collector)
   jaeger:
-    image: jaegertracing/all-in-one:1.76.0
+    image: jaegertracing/jaeger:2.15.0
     container_name: aistack-jaeger
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:16686/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -558,12 +564,6 @@ services:
     networks:
       - traefik
       - aistack-internal
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-      - SPAN_STORAGE_TYPE=badger
-      - BADGER_EPHEMERAL=false
-      - BADGER_DIRECTORY_VALUE=/badger/data
-      - BADGER_DIRECTORY_KEY=/badger/key
     logging:
       driver: "json-file"
       options:
@@ -574,6 +574,8 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
       - jaeger_data:/badger
+      - /opt/aistack/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+    command: ["--config", "/etc/jaeger/config.yaml"]
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.jaeger.rule=Host(`jaeger.example.com`)"
@@ -584,6 +586,79 @@ services:
       - "kuma.jaeger.http.name=Jaeger"
       - "kuma.jaeger.http.url=https://jaeger.example.com/"
       - "kuma.jaeger.http.interval=60"
+
+  # OpenTelemetry Collector - Telemetry aggregation and routing
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: aistack-otel-collector
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /opt/aistack/otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    depends_on:
+      jaeger:
+        condition: service_started
+    labels:
+      - "traefik.enable=false"
+
+  # NVIDIA GPU Exporter - GPU metrics for Prometheus (via nvidia-smi)
+  nvidia-gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.4.1
+    container_name: aistack-nvidia-gpu-exporter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    labels:
+      - "traefik.enable=false"
 
   # Prometheus - Metrics collection and storage
   prometheus:
@@ -694,6 +769,79 @@ services:
       jaeger:
         condition: service_started
 
+  # SmarterRouter - Intelligent LLM routing
+  smarterrouter:
+    image: ghcr.io/peva3/smarterrouter:latest
+    container_name: aistack-smarterrouter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - ROUTER_PROVIDER=ollama
+      - ROUTER_OLLAMA_URL=http://ollama:11434
+      - ROUTER_HOST=0.0.0.0
+      - ROUTER_PORT=11436
+      - ROUTER_EXTERNAL_MODEL_NAME=smarterrouter/main
+      - ROUTER_PREFER_SMALLER_MODELS=true
+      - ROUTER_PREFER_NEWER_MODELS=true
+      - ROUTER_TEMPERATURE=0.0
+      - ROUTER_MAX_TOKENS=50
+      - ROUTER_PROFILE_TIMEOUT=90
+      - ROUTER_GENERATION_TIMEOUT=120
+      - ROUTER_PROFILE_PROMPTS_PER_CATEGORY=3
+      - ROUTER_SIGNATURE_ENABLED=true
+      - "ROUTER_SIGNATURE_FORMAT=\nModel: {model}"
+      - ROUTER_CACHE_ENABLED=true
+      - ROUTER_CACHE_MAX_SIZE=500
+      - ROUTER_CACHE_TTL_SECONDS=3600
+      - ROUTER_DATABASE_URL=sqlite:////app/data/router.db
+      - ROUTER_POLLING_INTERVAL=60
+      - ROUTER_LOG_LEVEL=INFO
+      - ROUTER_LOG_FORMAT=text
+      - ROUTER_VRAM_MONITOR_ENABLED=true
+      - ROUTER_VRAM_AUTO_UNLOAD_ENABLED=true
+      - ROUTER_VRAM_UNLOAD_STRATEGY=lru
+      - ROUTER_BENCHMARK_SOURCES=huggingface,lmsys
+      - ROUTER_ADMIN_API_KEY=
+      - ROUTER_RATE_LIMIT_ENABLED=false
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - smarterrouter_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smarterrouter.rule=Host(`smarterrouter.example.com`)"
+      - "traefik.http.routers.smarterrouter.entrypoints=websecure"
+      - "traefik.http.routers.smarterrouter.tls=true"
+      - "traefik.http.routers.smarterrouter.tls.certresolver=cloudflare"
+      - "traefik.http.services.smarterrouter.loadbalancer.server.port=11436"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11436/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      ollama:
+        condition: service_started
+
   # Open Terminal - Shell execution for Open WebUI
   open-terminal:
     image: ghcr.io/open-webui/open-terminal:latest
@@ -778,6 +926,9 @@ volumes:
   # n8n workflow data
   n8n_data:
   
+  # SmarterRouter data
+  smarterrouter_data:
+
   # Open Terminal data
   open_terminal_data:
   
@@ -794,11 +945,8 @@ volumes:
       o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
       device: "//${SMB_SERVER}/${SMB_SHARE}/aistack/prometheus"
   
+  # Grafana data - local volume (SQLite requires local filesystem, not CIFS)
   grafana_data:
-    driver_opts:
-      type: cifs
-      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
-      device: "//${SMB_SERVER}/${SMB_SHARE}/aistack/grafana"
   
   prometheus_config:
     driver_opts:
