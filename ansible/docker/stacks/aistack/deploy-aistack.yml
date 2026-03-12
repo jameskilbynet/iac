@@ -1,0 +1,308 @@
+---
+# AI Stack Deployment Playbook
+# Ensures all directories, configuration files, and permissions are set correctly
+# on the Docker host before the stack is deployed.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml deploy-aistack.yml
+#   ansible-playbook -i inventory.yml deploy-aistack.yml --tags config
+#   ansible-playbook -i inventory.yml deploy-aistack.yml --tags deploy
+
+- name: Deploy AI Stack
+  hosts: docker-host
+  become: true
+  vars:
+    aistack_base_dir: /opt/aistack
+    aistack_user: "1000"
+    aistack_group: "1000"
+    aistack_src: "{{ playbook_dir }}/.."
+    # env file to deploy - override per host in inventory (e.g. aistack_env_src for test)
+    aistack_env_src: "{{ aistack_env_src | default(aistack_src ~ '/.env') }}"
+
+  tasks:
+    # ─── Directory Structure ───────────────────────────────────────────
+    - name: Create AI Stack directory structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0755"
+      loop:
+        - "{{ aistack_base_dir }}"
+        - "{{ aistack_base_dir }}/searxng"
+        - "{{ aistack_base_dir }}/jaeger"
+        - "{{ aistack_base_dir }}/otel-collector"
+        - "{{ aistack_base_dir }}/prometheus"
+        - "{{ aistack_base_dir }}/grafana"
+        - "{{ aistack_base_dir }}/grafana/provisioning"
+        - "{{ aistack_base_dir }}/grafana/provisioning/datasources"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards/json"
+      tags: [config, directories]
+
+    # ─── Docker Compose & Environment ──────────────────────────────────
+    - name: Deploy docker-compose.yml
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/docker-compose.yml"
+        dest: "{{ aistack_base_dir }}/docker-compose.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      tags: [config, compose]
+
+    - name: Deploy environment file
+      ansible.builtin.copy:
+        src: "{{ aistack_env_src }}"
+        dest: "{{ aistack_base_dir }}/.env"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0600"
+      tags: [config, env]
+
+    - name: Deploy validation script
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/validate-deployment.sh"
+        dest: "{{ aistack_base_dir }}/validate-deployment.sh"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0755"
+      tags: [config]
+
+    # ─── SearxNG Configuration ─────────────────────────────────────────
+    - name: Deploy SearxNG settings
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/searxng/settings.yml"
+        dest: "{{ aistack_base_dir }}/searxng/settings.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart searxng
+      tags: [config, searxng]
+
+    # ─── Jaeger Configuration ──────────────────────────────────────────
+    - name: Deploy Jaeger config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/jaeger/config.yaml"
+        dest: "{{ aistack_base_dir }}/jaeger/config.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart jaeger
+      tags: [config, jaeger]
+
+    # ─── OpenTelemetry Collector Configuration ─────────────────────────
+    - name: Deploy OpenTelemetry Collector config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/otel-collector/config.yaml"
+        dest: "{{ aistack_base_dir }}/otel-collector/config.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart otel-collector
+      tags: [config, otel]
+
+    # ─── Prometheus Configuration ──────────────────────────────────────
+    - name: Deploy Prometheus config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/prometheus/prometheus.yml"
+        dest: "{{ aistack_base_dir }}/prometheus/prometheus.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart prometheus
+      tags: [config, prometheus]
+
+    # ─── Grafana Provisioning ──────────────────────────────────────────
+    - name: Deploy Grafana datasources config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/datasources/datasources.yaml"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/datasources/datasources.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    - name: Deploy Grafana dashboards provisioning config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/dashboards/dashboards.yaml"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/dashboards/dashboards.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    - name: Deploy Grafana dashboard JSON files
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/dashboards/json/"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/dashboards/json/"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    # ─── Permissions Verification ──────────────────────────────────────
+    - name: Ensure config files are read-only for containers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      loop:
+        - "{{ aistack_base_dir }}/searxng/settings.yml"
+        - "{{ aistack_base_dir }}/jaeger/config.yaml"
+        - "{{ aistack_base_dir }}/otel-collector/config.yaml"
+        - "{{ aistack_base_dir }}/prometheus/prometheus.yml"
+        - "{{ aistack_base_dir }}/grafana/provisioning/datasources/datasources.yaml"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards/dashboards.yaml"
+      tags: [config, permissions]
+
+    - name: Ensure .env file is restricted
+      ansible.builtin.file:
+        path: "{{ aistack_base_dir }}/.env"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0600"
+      tags: [config, permissions]
+
+    # ─── Docker Prerequisites ──────────────────────────────────────────
+    - name: Ensure Docker is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+      tags: [deploy, docker]
+
+    - name: Check if traefik network exists
+      ansible.builtin.command: docker network inspect traefik
+      register: traefik_network
+      changed_when: false
+      failed_when: false
+      tags: [deploy, docker]
+
+    - name: Create traefik network
+      ansible.builtin.command: docker network create traefik
+      when: traefik_network.rc != 0
+      tags: [deploy, docker]
+
+    - name: Check NVIDIA Container Toolkit is available
+      ansible.builtin.command: nvidia-smi
+      register: nvidia_check
+      changed_when: false
+      failed_when: false
+      tags: [deploy, preflight]
+
+    - name: Warn if NVIDIA GPU is not available
+      ansible.builtin.debug:
+        msg: "WARNING: nvidia-smi not found - GPU services (ollama, comfyui, whishper) will fail to start"
+      when: nvidia_check.rc != 0
+      tags: [deploy, preflight]
+
+    # ─── Stack Deployment ──────────────────────────────────────────────
+    - name: Pull latest images
+      ansible.builtin.command:
+        cmd: docker compose pull
+        chdir: "{{ aistack_base_dir }}"
+      register: pull_result
+      changed_when: "'Pull complete' in pull_result.stderr or 'Downloaded newer' in pull_result.stderr"
+      tags: [deploy]
+
+    - name: Deploy AI Stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ aistack_base_dir }}"
+      register: deploy_result
+      changed_when: "'Started' in deploy_result.stderr or 'Creating' in deploy_result.stderr"
+      tags: [deploy]
+
+    - name: Wait for services to become healthy
+      ansible.builtin.command:
+        cmd: docker compose ps --format json
+        chdir: "{{ aistack_base_dir }}"
+      register: compose_ps
+      changed_when: false
+      retries: 10
+      delay: 30
+      until: "'unhealthy' not in compose_ps.stdout"
+      tags: [deploy, health]
+
+    # ─── Langfuse Database Initialisation ─────────────────────────────
+    - name: Wait for postgres to be healthy before creating Langfuse database
+      ansible.builtin.command:
+        cmd: docker inspect --format='{{"{{"}} .State.Health.Status {{"}}"}}' aistack-postgres
+      register: postgres_health
+      retries: 20
+      delay: 10
+      until: postgres_health.stdout.strip() == "healthy"
+      changed_when: false
+      tags: [deploy, langfuse]
+
+    - name: Create langfuse PostgreSQL database
+      ansible.builtin.shell: |
+        set -a
+        source "{{ aistack_base_dir }}/.env"
+        set +a
+        docker exec aistack-postgres psql -U "${POSTGRES_USER}" -tc \
+          "SELECT 1 FROM pg_database WHERE datname = 'langfuse';" | grep -q 1 || \
+        docker exec aistack-postgres psql -U "${POSTGRES_USER}" \
+          -c "CREATE DATABASE langfuse OWNER ${POSTGRES_USER};"
+      args:
+        executable: /bin/bash
+      changed_when: true
+      notify: Restart langfuse
+      tags: [deploy, langfuse]
+
+    - name: Display deployment status
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ aistack_base_dir }}"
+      register: stack_status
+      changed_when: false
+      tags: [deploy, health]
+
+    - name: Show stack status
+      ansible.builtin.debug:
+        var: stack_status.stdout_lines
+      tags: [deploy, health]
+
+  # ─── Handlers ──────────────────────────────────────────────────────
+  handlers:
+    - name: Restart searxng
+      ansible.builtin.command:
+        cmd: docker compose restart searxng
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart jaeger
+      ansible.builtin.command:
+        cmd: docker compose restart jaeger
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart otel-collector
+      ansible.builtin.command:
+        cmd: docker compose restart otel-collector
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart prometheus
+      ansible.builtin.command:
+        cmd: docker compose restart prometheus
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart grafana
+      ansible.builtin.command:
+        cmd: docker compose restart grafana
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart langfuse
+      ansible.builtin.command:
+        cmd: docker compose restart langfuse-web langfuse-worker
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
