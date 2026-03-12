@@ -9,7 +9,7 @@
 #   ansible-playbook -i inventory.yml deploy-aistack.yml --tags deploy
 
 - name: Deploy AI Stack
-  hosts: docker-host
+  hosts: all
   become: true
   vars:
     aistack_base_dir: /opt/aistack
