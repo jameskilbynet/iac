@@ -17,8 +17,6 @@
     aistack_group: "1000"
     # Resolve from playbook_dir (ansible/docker/stacks/aistack/) up to repo root, then into docker/aistack/
     aistack_src: "{{ playbook_dir }}/../../../../docker/aistack"
-    # env file to deploy - can be overridden per host in inventory
-    aistack_env_src: "{{ aistack_src }}/.env"
 
   tasks:
     # ─── Directory Structure ───────────────────────────────────────────
