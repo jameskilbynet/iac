@@ -15,9 +15,10 @@
     aistack_base_dir: /opt/aistack
     aistack_user: "1000"
     aistack_group: "1000"
-    aistack_src: "{{ playbook_dir }}/.."
-    # env file to deploy - override per host in inventory (e.g. aistack_env_src for test)
-    aistack_env_src: "{{ aistack_env_src | default(aistack_src ~ '/.env') }}"
+    # Resolve from playbook_dir (ansible/docker/stacks/aistack/) up to repo root, then into docker/aistack/
+    aistack_src: "{{ playbook_dir }}/../../../../docker/aistack"
+    # env file to deploy - can be overridden per host in inventory
+    aistack_env_src: "{{ aistack_src }}/.env"
 
   tasks:
     # ─── Directory Structure ───────────────────────────────────────────
@@ -208,7 +209,9 @@
         cmd: docker compose pull
         chdir: "{{ aistack_base_dir }}"
       register: pull_result
-      changed_when: "'Pull complete' in pull_result.stderr or 'Downloaded newer' in pull_result.stderr"
+      changed_when: >-
+        'Pull complete' in pull_result.stderr or 'Downloaded newer' in pull_result.stderr or
+        'Pull complete' in pull_result.stdout or 'Downloaded newer' in pull_result.stdout
       tags: [deploy]
 
     - name: Deploy AI Stack
@@ -216,7 +219,9 @@
         cmd: docker compose up -d --remove-orphans
         chdir: "{{ aistack_base_dir }}"
       register: deploy_result
-      changed_when: "'Started' in deploy_result.stderr or 'Creating' in deploy_result.stderr"
+      changed_when: >-
+        'Started' in deploy_result.stderr or 'Creating' in deploy_result.stderr or
+        'Started' in deploy_result.stdout or 'Creating' in deploy_result.stdout
       tags: [deploy]
 
     - name: Wait for services to become healthy
@@ -252,7 +257,8 @@
           -c "CREATE DATABASE langfuse OWNER ${POSTGRES_USER};"
       args:
         executable: /bin/bash
-      changed_when: true
+      register: langfuse_db
+      changed_when: "'CREATE DATABASE' in langfuse_db.stdout"
       notify: Restart langfuse
       tags: [deploy, langfuse]
 
