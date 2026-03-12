@@ -10,7 +10,7 @@
     traefik_container_name: "{{ traefik_name | default('traefik') }}"
     traefik_config_dir: "{{ traefik_config_path | default('/etc/traefik') }}"
     traefik_cert_dir: "{{ traefik_acme_path | default('/etc/traefik/acme') }}"
-    traefik_network: "{{ traefik_docker_network | default('traefik-net') }}"
+    traefik_network: "{{ traefik_docker_network | default('traefik') }}"
 
     # Ports
     traefik_port_web: "{{ traefik_http_port | default(80) }}"
