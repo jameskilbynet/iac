@@ -1,0 +1,49 @@
+---
+# Shared VCF provisioning defaults for all MikroTik switches
+# Override per-host in host_vars/<hostname>/vcf.yml
+
+# System
+system_identity: "vcf-switch"
+system_timezone: "Europe/London"
+ntp_server: "ntp-1.jameskilby.cloud"
+dns_servers: "192.168.10.250,192.168.10.251"
+
+# Bridge
+bridge_name: "br-vcf"
+bridge_vlan_filtering: "yes"
+bridge_mtu: 9216
+
+# Services — disable insecure, keep management
+services_disabled:
+  - telnet
+  - ftp
+  - www
+
+services_enabled:
+  - name: ssh
+    port: 22
+  - name: api
+    port: 8728
+  - name: api-ssl
+    port: 8729
+  - name: www-ssl
+    port: 443
+
+# SNMP (disabled by default)
+enable_snmp: false
+snmp_community: "public"
+snmp_location: "VCF Datacenter"
+
+# DHCP defaults
+enable_dhcp_vm: true
+dhcp_pool_start: "192.168.105.100"
+dhcp_pool_end: "192.168.105.200"
+vm_vlan_id: 105
+vm_network: "192.168.105.0/24"
+
+# BGP defaults
+enable_bgp: true
+bgp_as: 65000
+bgp_template_name: "bgp-vcf"
+bgp_output_filter: "bgp-vcf-out"
+bgp_input_filter: "bgp-in"
