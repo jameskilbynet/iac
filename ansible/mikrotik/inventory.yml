@@ -1,0 +1,14 @@
+---
+all:
+  children:
+    mikrotik_switches:
+      hosts:
+        mikrotik-sw-1:
+          ansible_host: 192.168.3.1
+        mikrotik-sw-2:
+          ansible_host: 192.168.3.2
+      vars:
+        ansible_user: admin
+        ansible_connection: ansible.netcommon.network_cli
+        ansible_network_os: community.routeros.routeros
+        ansible_ssh_private_key_file: ~/.ssh/id_ed25519
