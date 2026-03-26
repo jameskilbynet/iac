@@ -1,11 +1,20 @@
 ---
-- name: Backup Mikrotik device configurations
+# Backup MikroTik switch configurations and commit to git
+#
+# Saves one compact .rsc file per device (no timestamps in filenames)
+# so git tracks changes as clean diffs over time.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml backup_config.yml
+#   ansible-playbook -i inventory.yml backup_config.yml --limit mikrotik-sw-1
+
+- name: Backup MikroTik configurations and commit to git
   hosts: mikrotik_switches
   gather_facts: no
 
   vars:
     backup_dir: "{{ playbook_dir }}/configs"
-    timestamp: "{{ lookup('pipe', 'date +%Y%m%d_%H%M%S') }}"
+    git_repo_root: "{{ playbook_dir | regex_replace('/ansible/mikrotik$', '') }}"
 
   tasks:
     - name: Ensure backup directory exists
@@ -16,17 +25,11 @@
         mode: '0755'
       run_once: true
 
-    - name: Export full configuration
-      community.routeros.command:
-        commands:
-          - /export
-      register: config_export
-
-    - name: Export compact configuration (without defaults)
+    - name: Export compact configuration
       community.routeros.command:
         commands:
           - /export compact
-      register: config_compact
+      register: config_export
 
     - name: Get system identity
       community.routeros.command:
@@ -34,54 +37,43 @@
           - /system identity print
       register: system_identity
 
-    - name: Get system resource info
-      community.routeros.command:
-        commands:
-          - /system resource print
-      register: system_resources
-
-    - name: Get RouterOS version
-      community.routeros.command:
-        commands:
-          - /system package print
-      register: system_packages
-
-    - name: Save full configuration to file
+    - name: Save configuration to file
       delegate_to: localhost
       ansible.builtin.copy:
         content: |
-          # Mikrotik Configuration Backup
           # Device: {{ inventory_hostname }} ({{ ansible_host }})
-          # Date: {{ timestamp }}
           # Identity: {{ system_identity.stdout[0] | default('Unknown') }}
-          # Resources: {{ system_resources.stdout[0] | default('Unknown') }}
+          # Exported: {{ '%Y-%m-%d %H:%M:%S' | strftime }}
           #
           {{ config_export.stdout[0] }}
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}_full_{{ timestamp }}.rsc"
+        dest: "{{ backup_dir }}/{{ inventory_hostname }}.rsc"
         mode: '0644'
 
-    - name: Save compact configuration to file
+    - name: Stage and commit config changes to git
       delegate_to: localhost
-      ansible.builtin.copy:
-        content: |
-          # Mikrotik Compact Configuration Backup
-          # Device: {{ inventory_hostname }} ({{ ansible_host }})
-          # Date: {{ timestamp }}
-          #
-          {{ config_compact.stdout[0] }}
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}_compact_{{ timestamp }}.rsc"
-        mode: '0644'
+      run_once: true
+      block:
+        - name: Stage backup files
+          ansible.builtin.command:
+            cmd: git add configs/
+            chdir: "{{ playbook_dir }}"
 
-    - name: Save latest configuration (symlink-like copy)
-      delegate_to: localhost
-      ansible.builtin.copy:
-        content: "{{ config_compact.stdout[0] }}"
-        dest: "{{ backup_dir }}/{{ inventory_hostname }}_latest.rsc"
-        mode: '0644'
+        - name: Check for staged changes
+          ansible.builtin.command:
+            cmd: git diff --cached --quiet configs/
+            chdir: "{{ playbook_dir }}"
+          register: git_diff
+          failed_when: false
+          changed_when: git_diff.rc == 1
 
-    - name: Display backup summary
-      ansible.builtin.debug:
-        msg: |
-          Backup completed for {{ inventory_hostname }}
-          - Full config: {{ backup_dir }}/{{ inventory_hostname }}_full_{{ timestamp }}.rsc
-          - Compact config: {{ backup_dir }}/{{ inventory_hostname }}_compact_{{ timestamp }}.rsc
+        - name: Commit config backup
+          ansible.builtin.command:
+            cmd: >-
+              git commit -m "backup: MikroTik config {{ '%Y-%m-%d %H:%M' | strftime }}"
+            chdir: "{{ git_repo_root }}"
+          when: git_diff.rc == 1
+
+        - name: Report no changes
+          ansible.builtin.debug:
+            msg: "No configuration changes detected — nothing to commit."
+          when: git_diff.rc == 0
