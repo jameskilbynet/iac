@@ -1,3 +1,6 @@
 # Ignore backup configurations (may contain sensitive data)
 configs/*.rsc
 !configs/.gitkeep
+
+# Secrets (passwords, API keys, etc.)
+**/secrets.yml
