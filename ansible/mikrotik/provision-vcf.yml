@@ -1,0 +1,718 @@
+---
+# MikroTik VCF Provisioning Playbook (Idempotent)
+#
+# Safe to re-run — only modifies config that differs from desired state.
+# No teardown of bridge/VLANs/BGP on unchanged runs, so no traffic impact.
+#
+# Provisions a MikroTik switch for VMware Cloud Foundation with:
+#   - System basics (identity, NTP, DNS)
+#   - Bridge with VLAN filtering and jumbo frames
+#   - VCF VLANs (management, vMotion, vSAN, TEP, VM, NFS, DMZ)
+#   - Per-VLAN DHCP scopes
+#   - Service hardening (disable telnet/ftp/http)
+#   - BGP peering with routing filters
+#   - Static routing and IP forwarding
+#
+# Usage:
+#   ansible-playbook -i inventory.yml provision-vcf.yml
+#   ansible-playbook -i inventory.yml provision-vcf.yml --limit mikrotik-sw-1
+#   ansible-playbook -i inventory.yml provision-vcf.yml --tags bgp
+#   ansible-playbook -i inventory.yml provision-vcf.yml --check  (dry run)
+
+- name: Provision MikroTik switch for VMware VCF
+  hosts: mikrotik_switches
+  gather_facts: no
+
+  tasks:
+
+    # =================================================================
+    # BACKUP
+    # =================================================================
+
+    - name: Create configuration backup
+      tags: [always]
+      community.routeros.command:
+        commands:
+          - /system backup save name=vcf-pre-provision
+      ignore_errors: true
+
+    # =================================================================
+    # SYSTEM BASICS (all use 'set' — naturally idempotent)
+    # =================================================================
+
+    - name: Set system identity
+      tags: [system]
+      community.routeros.command:
+        commands:
+          - /system identity set name={{ system_identity }}
+
+    - name: Set timezone
+      tags: [system]
+      community.routeros.command:
+        commands:
+          - /system clock set time-zone-name={{ system_timezone }}
+
+    - name: Enable NTP client
+      tags: [system]
+      community.routeros.command:
+        commands:
+          - /system ntp client set enabled=yes
+
+    - name: Add NTP server (if not present)
+      tags: [system]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/system ntp client servers find
+            address={{ ntp_server }}]] = 0) do={
+            /system ntp client servers add address={{ ntp_server }} }
+
+    - name: Configure DNS servers
+      tags: [system]
+      community.routeros.command:
+        commands:
+          - /ip dns set servers={{ dns_servers }}
+
+    # =================================================================
+    # CLEANUP — remove stale config from previous provisioning runs
+    # Only removes objects NOT managed by this playbook (orphans)
+    # =================================================================
+
+    - name: Remove old default bridge and orphaned entries
+      tags: [cleanup, bridge]
+      block:
+        - name: Remove all ports from old default bridge
+          community.routeros.command:
+            commands:
+              - >-
+                :foreach i in=[/interface bridge port find
+                where bridge=bridge] do={
+                /interface bridge port remove $i }
+          ignore_errors: true
+
+        - name: Remove all VLAN entries from old default bridge
+          community.routeros.command:
+            commands:
+              - >-
+                :foreach i in=[/interface bridge vlan find
+                where bridge=bridge] do={
+                /interface bridge vlan remove $i }
+          ignore_errors: true
+
+        - name: Remove old default bridge
+          community.routeros.command:
+            commands:
+              - :do { /interface bridge remove [find name=bridge] } on-error={}
+          ignore_errors: true
+
+        - name: Remove orphaned bridge VLAN entries (not on br-vcf)
+          community.routeros.command:
+            commands:
+              - >-
+                :foreach i in=[/interface bridge vlan find
+                where bridge!={{ bridge_name }}] do={
+                /interface bridge vlan remove $i }
+          ignore_errors: true
+
+        - name: Remove orphaned IP addresses (invalid entries from deleted interfaces)
+          community.routeros.command:
+            commands:
+              - >-
+                :foreach i in=[/ip address find where invalid] do={
+                /ip address remove $i }
+          ignore_errors: true
+
+    # =================================================================
+    # BRIDGE — create only if missing, update settings in-place
+    # =================================================================
+
+    - name: Create bridge if not present
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/interface bridge find name={{ bridge_name }}]] = 0) do={
+            /interface bridge add name={{ bridge_name }}
+            vlan-filtering={{ bridge_vlan_filtering }}
+            protocol-mode=rstp mtu={{ bridge_mtu }}
+            comment="VCF bridge — Ansible managed" }
+
+    - name: Ensure bridge settings are correct
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - >-
+            /interface bridge set [find name={{ bridge_name }}]
+            vlan-filtering={{ bridge_vlan_filtering }}
+            protocol-mode=rstp mtu={{ bridge_mtu }}
+            comment="VCF bridge — Ansible managed"
+
+    - name: Enable hardware offloading on bridge
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - /interface bridge set [find name={{ bridge_name }}] hw=yes
+      ignore_errors: true
+
+    - name: Enable L3 hardware offloading on switch chip
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - /interface ethernet switch set switch1 l3-hw-offloading=yes
+
+    - name: Set interface speed overrides
+      tags: [bridge]
+      when: interface_speed_overrides is defined
+      community.routeros.command:
+        commands:
+          - >-
+            /interface ethernet set {{ item.name }}
+            speed={{ item.speed }}
+            auto-negotiation={{ 'yes' if item.auto_negotiation | default(true) else 'no' }}
+      loop: "{{ interface_speed_overrides }}"
+      loop_control:
+        label: "{{ item.name }} -> {{ item.speed }}"
+
+    - name: Set MTU on all QSFP28 interfaces
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - >-
+            :foreach i in=[/interface find where name~"qsfp28"] do={
+            /interface set $i mtu={{ bridge_mtu }} l2mtu={{ bridge_mtu }} }
+
+    - name: Ensure trunk interfaces are in bridge
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/interface bridge port find
+            interface={{ item }} bridge={{ bridge_name }}]] = 0) do={
+            :do { /interface bridge port remove [find interface={{ item }}] } on-error={};
+            /interface bridge port add bridge={{ bridge_name }} interface={{ item }} hw=yes
+            comment="Trunk port — Ansible managed" }
+      loop: "{{ trunk_interfaces }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Ensure uplink interfaces are in bridge
+      tags: [bridge]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/interface bridge port find
+            interface={{ item }} bridge={{ bridge_name }}]] = 0) do={
+            :do { /interface bridge port remove [find interface={{ item }}] } on-error={};
+            /interface bridge port add bridge={{ bridge_name }} interface={{ item }} hw=yes
+            comment="Uplink to firewall — Ansible managed" }
+      loop: "{{ uplink_interfaces }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Disable unused interfaces
+      tags: [bridge]
+      when: disabled_interfaces is defined
+      community.routeros.command:
+        commands:
+          - :do { /interface bridge port remove [find interface={{ item }}] } on-error={}
+          - >-
+            /interface set [find name={{ item }}] disabled=yes
+            comment="Unused port — disabled by Ansible"
+      loop: "{{ disabled_interfaces }}"
+      loop_control:
+        label: "Disable {{ item }}"
+
+    # =================================================================
+    # VLANs — create only if missing, update in-place
+    # =================================================================
+
+    - name: Build tagged interface list per VLAN
+      tags: [vlans]
+      ansible.builtin.set_fact:
+        vlan_tagged_map: >-
+          {{
+            vlan_tagged_map | default({}) | combine({
+              item.id | string:
+                item.tagged_groups
+                | map('extract', interface_groups)
+                | flatten
+                | join(',')
+            })
+          }}
+      loop: "{{ vlans }}"
+      loop_control:
+        label: "VLAN {{ item.id }} ({{ item.name }})"
+
+    - name: Ensure VLAN interfaces exist
+      tags: [vlans]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/interface vlan find name=vlan{{ item.id }}]] = 0) do={
+            /interface vlan add name=vlan{{ item.id }} vlan-id={{ item.id }}
+            interface={{ bridge_name }}
+            {{ 'mtu=' ~ item.mtu if item.mtu is defined else '' }}
+            comment="VLAN {{ item.id }} {{ item.name }} — Ansible managed" }
+      loop: "{{ vlans }}"
+      loop_control:
+        label: "VLAN {{ item.id }} ({{ item.name }})"
+
+    - name: Ensure VLAN interface settings are correct
+      tags: [vlans]
+      community.routeros.command:
+        commands:
+          - >-
+            /interface vlan set [find name=vlan{{ item.id }}]
+            vlan-id={{ item.id }} interface={{ bridge_name }}
+            {{ 'mtu=' ~ item.mtu if item.mtu is defined else '' }}
+            comment="VLAN {{ item.id }} {{ item.name }} — Ansible managed"
+      loop: "{{ vlans }}"
+      loop_control:
+        label: "VLAN {{ item.id }} ({{ item.name }})"
+
+    - name: Ensure bridge VLAN entries exist
+      tags: [vlans]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/interface bridge vlan find
+            vlan-ids={{ item.id }} bridge={{ bridge_name }}]] = 0) do={
+            /interface bridge vlan add bridge={{ bridge_name }}
+            vlan-ids={{ item.id }}
+            tagged={{ bridge_name ~ ',' ~ vlan_tagged_map[item.id | string] if item.network is defined else vlan_tagged_map[item.id | string] }} }
+          - >-
+            /interface bridge vlan set
+            [find vlan-ids={{ item.id }} bridge={{ bridge_name }}]
+            tagged={{ bridge_name ~ ',' ~ vlan_tagged_map[item.id | string] if item.network is defined else vlan_tagged_map[item.id | string] }}
+      loop: "{{ vlans }}"
+      loop_control:
+        label: "VLAN {{ item.id }} ({{ item.name }})"
+
+    - name: Ensure gateway IPs are assigned to VLANs
+      tags: [vlans]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip address find
+            address="{{ item.network | ansible.utils.ipaddr('1') }}"
+            interface=vlan{{ item.id }}]] = 0) do={
+            :do { /ip address remove [find interface=vlan{{ item.id }}] } on-error={};
+            /ip address add
+            address={{ item.network | ansible.utils.ipaddr('1') }}
+            interface=vlan{{ item.id }}
+            comment="Gateway for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed" }
+      loop: "{{ vlans | selectattr('network', 'defined') | list }}"
+      loop_control:
+        label: "VLAN {{ item.id }} -> {{ item.network | ansible.utils.ipaddr('1') }}"
+
+    # =================================================================
+    # DHCP — per-VLAN scopes, create only if missing
+    # =================================================================
+
+    - name: Build list of VLANs with DHCP
+      tags: [dhcp]
+      ansible.builtin.set_fact:
+        dhcp_vlans: "{{ vlans | selectattr('dhcp', 'defined') | list }}"
+
+    - name: Ensure DHCP pools exist
+      tags: [dhcp]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip pool find name={{ item.dhcp.pool_name }}]] = 0) do={
+            /ip pool add name={{ item.dhcp.pool_name }}
+            ranges={{ item.dhcp.range_start }}-{{ item.dhcp.range_end }}
+            comment="DHCP pool for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed" }
+          - >-
+            /ip pool set [find name={{ item.dhcp.pool_name }}]
+            ranges={{ item.dhcp.range_start }}-{{ item.dhcp.range_end }}
+            comment="DHCP pool for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed"
+      loop: "{{ dhcp_vlans }}"
+      loop_control:
+        label: "Pool {{ item.dhcp.pool_name }}"
+
+    - name: Ensure DHCP networks exist
+      tags: [dhcp]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip dhcp-server network find
+            address="{{ item.network }}"]] = 0) do={
+            /ip dhcp-server network add address={{ item.network }}
+            gateway={{ item.network | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
+            dns-server={{ dns_servers }}
+            comment="DHCP network for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed" }
+          - >-
+            /ip dhcp-server network set
+            [find address="{{ item.network }}"]
+            gateway={{ item.network | ansible.utils.ipaddr('1') | ansible.utils.ipaddr('address') }}
+            dns-server={{ dns_servers }}
+            comment="DHCP network for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed"
+      loop: "{{ dhcp_vlans }}"
+      loop_control:
+        label: "Network {{ item.network }}"
+
+    - name: Ensure DHCP servers exist
+      tags: [dhcp]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip dhcp-server find
+            name={{ item.dhcp.server_name }}]] = 0) do={
+            /ip dhcp-server add name={{ item.dhcp.server_name }}
+            interface=vlan{{ item.id }}
+            address-pool={{ item.dhcp.pool_name }}
+            lease-time={{ item.dhcp.lease_time | default('1d') }}
+            disabled=no
+            comment="DHCP server for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed" }
+          - >-
+            /ip dhcp-server set [find name={{ item.dhcp.server_name }}]
+            interface=vlan{{ item.id }}
+            address-pool={{ item.dhcp.pool_name }}
+            lease-time={{ item.dhcp.lease_time | default('1d') }}
+            disabled=no
+            comment="DHCP server for {{ item.name }} (VLAN {{ item.id }}) — Ansible managed"
+      loop: "{{ dhcp_vlans }}"
+      loop_control:
+        label: "Server {{ item.dhcp.server_name }}"
+
+    # =================================================================
+    # SERVICE HARDENING (all use 'set' — naturally idempotent)
+    # =================================================================
+
+    - name: Disable insecure services
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - /ip service set {{ item }} disabled=yes
+      loop: "{{ services_disabled }}"
+      loop_control:
+        label: "Disable {{ item }}"
+
+    - name: Enable and configure management services
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - /ip service set {{ item.name }} disabled=no port={{ item.port }}
+      loop: "{{ services_enabled }}"
+      loop_control:
+        label: "{{ item.name }}:{{ item.port }}"
+
+    - name: Create local CA certificate (if needed)
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/certificate find name=local-ca]] = 0) do={
+            /certificate add name=local-ca common-name=local-ca
+            key-usage=key-cert-sign,crl-sign;
+            /certificate sign local-ca name=local-ca }
+      ignore_errors: true
+
+    - name: Create server certificate (if needed)
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/certificate find name=local-cert]] = 0) do={
+            /certificate add name=local-cert common-name={{ ansible_host }}
+            key-usage=tls-server days-valid=3650;
+            /certificate sign local-cert ca=local-ca }
+      ignore_errors: true
+
+    - name: Set HTTPS certificate
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - /ip service set www-ssl certificate=local-cert
+      ignore_errors: true
+
+    - name: Set API-SSL certificate
+      tags: [security]
+      community.routeros.command:
+        commands:
+          - /ip service set api-ssl certificate=local-cert
+      ignore_errors: true
+
+    # =================================================================
+    # SNMP (optional, uses 'set' — naturally idempotent)
+    # =================================================================
+
+    - name: Configure SNMP
+      tags: [snmp]
+      when: enable_snmp | default(false)
+      community.routeros.command:
+        commands:
+          - /snmp set enabled=yes contact=admin
+          - /snmp community set [find default=yes] name={{ snmp_community }}
+
+    # =================================================================
+    # ROUTING — idempotent default route
+    # =================================================================
+
+    - name: Ensure default route exists
+      tags: [routing]
+      when: management_gateway is defined
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip route find
+            dst-address="0.0.0.0/0" gateway={{ management_gateway }} !dynamic]] = 0) do={
+            :do { /ip route remove [find dst-address="0.0.0.0/0" !dynamic] } on-error={};
+            /ip route add dst-address=0.0.0.0/0 gateway={{ management_gateway }}
+            comment="Default route to Watchguard — Ansible managed" }
+
+    - name: Enable IP forwarding
+      tags: [routing]
+      community.routeros.command:
+        commands:
+          - /ip settings set ip-forward=yes
+
+    # =================================================================
+    # BGP — idempotent configuration
+    # Uses the RouterOS API (port 8728) for dotted parameters
+    # Routing ID and template use 'set' to avoid teardown
+    # Filter rules are only rebuilt if the network list has changed
+    # =================================================================
+
+    - name: Configure BGP
+      tags: [bgp]
+      when: enable_bgp | default(false)
+      block:
+        - name: Ensure routing ID exists
+          community.routeros.command:
+            commands:
+              - >-
+                :if ([:len [/routing id find name=main]] = 0) do={
+                /routing id add id={{ bgp_router_id }} name=main
+                comment="BGP router-id — Ansible managed" }
+              - >-
+                /routing id set [find name=main] id={{ bgp_router_id }}
+                comment="BGP router-id — Ansible managed"
+
+        - name: Ensure BGP template exists
+          community.routeros.command:
+            commands:
+              - >-
+                :if ([:len [/routing bgp template find name={{ bgp_template_name }}]] = 0) do={
+                /routing bgp template add name={{ bgp_template_name }} as={{ bgp_as }}
+                comment="iBGP template AS {{ bgp_as }} — Ansible managed" }
+              - >-
+                /routing bgp template set [find name={{ bgp_template_name }}]
+                as={{ bgp_as }}
+                comment="iBGP template AS {{ bgp_as }} — Ansible managed"
+              - /routing bgp template set [find name={{ bgp_template_name }}] output.redistribute=connected
+
+        - name: Check if BGP instance exists
+          community.routeros.api_info:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp instance
+          register: bgp_instances
+
+        - name: Create BGP instance
+          community.routeros.api:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp instance
+            add: name=default as={{ bgp_as }} router-id={{ bgp_router_id }}
+          when: bgp_instances.result | length == 0
+
+        - name: Update BGP instance
+          community.routeros.api:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp instance
+            update: >-
+              .id={{ bgp_instances.result[0]['.id'] }}
+              as={{ bgp_as }}
+              router-id={{ bgp_router_id }}
+          when: bgp_instances.result | length > 0
+
+        - name: Check if BGP connection exists
+          community.routeros.api_info:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp connection
+          register: bgp_connections
+
+        - name: Create BGP connection via API
+          community.routeros.api:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp connection
+            add: >-
+              name={{ bgp_peer_name }}
+              instance=default
+              as={{ bgp_as }}
+              templates={{ bgp_template_name }}
+              remote.address={{ bgp_peer_address }}
+              remote.as={{ bgp_as }}
+              local.address={{ bgp_local_address }}
+              local.role=ibgp
+              output.filter-chain={{ bgp_output_filter }}
+              input.filter={{ bgp_input_filter }}
+              disabled=no
+          when: bgp_connections.result | selectattr('name', 'equalto', bgp_peer_name) | list | length == 0
+
+        - name: Update BGP connection via API
+          community.routeros.api:
+            hostname: "{{ ansible_host }}"
+            username: "{{ ansible_user }}"
+            password: "{{ mikrotik_api_password }}"
+            tls: false
+            port: 8728
+            path: routing bgp connection
+            update: >-
+              .id={{ (bgp_connections.result | selectattr('name', 'equalto', bgp_peer_name) | first)['.id'] }}
+              instance=default
+              as={{ bgp_as }}
+              templates={{ bgp_template_name }}
+              remote.address={{ bgp_peer_address }}
+              remote.as={{ bgp_as }}
+              local.address={{ bgp_local_address }}
+              local.role=ibgp
+              output.filter-chain={{ bgp_output_filter }}
+              input.filter={{ bgp_input_filter }}
+              disabled=no
+          when: bgp_connections.result | selectattr('name', 'equalto', bgp_peer_name) | list | length > 0
+
+        # --- BGP filter rules: only rebuild if the rule count has changed ---
+        # We check total rule count and number of "Advertise" rules (via comment~)
+        # to decide whether a rebuild is needed. This avoids tearing down and
+        # recreating filters on every run, which would cause BGP route flaps.
+
+        - name: Count existing BGP output filter rules
+          community.routeros.command:
+            commands:
+              - :put [:len [/routing filter rule find where chain={{ bgp_output_filter }}]]
+          register: bgp_out_rule_count
+
+        - name: Count existing BGP output advertise rules
+          community.routeros.command:
+            commands:
+              - :put [:len [/routing filter rule find where chain={{ bgp_output_filter }} comment~"Advertise"]]
+          register: bgp_out_advertise_count
+
+        - name: Determine if BGP output filters need rebuild
+          ansible.builtin.set_fact:
+            bgp_out_needs_rebuild: >-
+              {{
+                (bgp_out_rule_count.stdout_lines[0] | last | trim | int) != (bgp_advertise_networks | length + 1)
+                or
+                (bgp_out_advertise_count.stdout_lines[0] | last | trim | int) != (bgp_advertise_networks | length)
+              }}
+
+        - name: Rebuild BGP output filter rules
+          when: bgp_out_needs_rebuild | bool
+          block:
+            - name: Clear existing BGP output filter rules
+              community.routeros.command:
+                commands:
+                  - >-
+                    :do { :foreach i in=[/routing filter rule find
+                    where chain={{ bgp_output_filter }}] do={
+                    /routing filter rule remove $i } } on-error={}
+
+            - name: Add BGP output filter — advertise networks
+              community.routeros.command:
+                commands:
+                  - >-
+                    /routing filter rule add chain={{ bgp_output_filter }}
+                    rule="if (dst == {{ item }}) { accept }"
+                    comment="Advertise {{ item }} - Ansible managed"
+              loop: "{{ bgp_advertise_networks }}"
+              loop_control:
+                label: "Advertise {{ item }}"
+
+            - name: Add BGP output filter — default reject
+              community.routeros.command:
+                commands:
+                  - >-
+                    /routing filter rule add chain={{ bgp_output_filter }} rule=reject
+                    comment="Default deny outbound - Ansible managed"
+
+        - name: Count existing BGP input filter rules
+          community.routeros.command:
+            commands:
+              - :put [:len [/routing filter rule find where chain={{ bgp_input_filter }}]]
+          register: bgp_in_rule_count
+
+        - name: Rebuild BGP input filter rules
+          when: (bgp_in_rule_count.stdout_lines[0] | last | trim | int) != 2
+          block:
+            - name: Clear existing BGP input filter rules
+              community.routeros.command:
+                commands:
+                  - >-
+                    :do { :foreach i in=[/routing filter rule find
+                    where chain={{ bgp_input_filter }}] do={
+                    /routing filter rule remove $i } } on-error={}
+
+            - name: Add BGP input filter — accept default route
+              community.routeros.command:
+                commands:
+                  - >-
+                    /routing filter rule add chain={{ bgp_input_filter }}
+                    rule="if (dst == 0.0.0.0/0) { accept }"
+                    comment="Accept default route - Ansible managed"
+
+            - name: Add BGP input filter — default reject
+              community.routeros.command:
+                commands:
+                  - >-
+                    /routing filter rule add chain={{ bgp_input_filter }} rule=reject
+                    comment="Default deny inbound - Ansible managed"
+
+    # =================================================================
+    # MANAGEMENT IP (ensure we don't lose access)
+    # =================================================================
+
+    - name: Ensure management IP is configured
+      tags: [routing]
+      when: management_ip is defined and management_interface is defined
+      community.routeros.command:
+        commands:
+          - >-
+            :if ([:len [/ip address find address="{{ management_ip }}"
+            interface={{ management_interface }}]] = 0) do={
+            /ip address add address={{ management_ip }}
+            interface={{ management_interface }}
+            comment="Management IP — Ansible managed" }
+
+    # =================================================================
+    # FINAL BACKUP
+    # =================================================================
+
+    - name: Save post-provision backup
+      tags: [always]
+      community.routeros.command:
+        commands:
+          - /system backup save name=vcf-post-provision
+
+    - name: Display provisioning summary
+      tags: [always]
+      ansible.builtin.debug:
+        msg: |
+          VCF provisioning complete for {{ inventory_hostname }} ({{ ansible_host }})
+            Bridge:     {{ bridge_name }} (VLAN filtering, MTU {{ bridge_mtu }})
+            VLANs:      {{ vlans | map(attribute='id') | join(', ') }}
+            DHCP:       {{ dhcp_vlans | default([]) | map(attribute='name') | join(', ') | default('disabled') }}
+            BGP:        {{ 'AS ' ~ bgp_as ~ ' -> ' ~ bgp_peer_address ~ ' (' ~ bgp_peer_name ~ ')' if enable_bgp | default(false) else 'disabled' }}
+            BGP filter: {{ 'unchanged' if not (bgp_out_needs_rebuild | default(false) | bool) else 'rebuilt' }}
+            Gateway:    {{ management_gateway | default('none') }}

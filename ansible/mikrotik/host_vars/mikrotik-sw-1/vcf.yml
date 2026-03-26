@@ -1,0 +1,149 @@
+---
+# VCF provisioning configuration for mikrotik-sw-1 (192.168.3.1)
+
+system_identity: "vcf-switch-01"
+
+# Management
+management_interface: "ether1"
+management_ip: "192.168.3.1/24"
+management_gateway: "192.168.3.248"
+
+# Interface groups — referenced by name in vlan tagged_groups
+interface_groups:
+  uplink:
+    - qsfp28-1-1
+  hosts:
+    - qsfp28-1-2
+    - qsfp28-1-3
+    - qsfp28-3-1
+    - qsfp28-3-2
+    - qsfp28-3-3
+    - qsfp28-3-4
+  storage:
+    - qsfp28-1-4
+    - qsfp28-2-4
+  workstations:
+    - qsfp28-2-2
+    - qsfp28-2-3
+  infra:
+    - qsfp28-4-1
+
+# All interfaces to add to the bridge (union of all groups)
+# Interface speed overrides (for DAC/breakout cables)
+interface_speed_overrides:
+  - name: qsfp28-1-1
+    speed: 10G-baseCR
+    auto_negotiation: false
+
+uplink_interfaces:
+  - qsfp28-1-1
+
+trunk_interfaces:
+  - qsfp28-1-2
+  - qsfp28-1-3
+  - qsfp28-1-4
+  - qsfp28-2-2
+  - qsfp28-2-3
+  - qsfp28-2-4
+  - qsfp28-3-1
+  - qsfp28-3-2
+  - qsfp28-3-3
+  - qsfp28-3-4
+  - qsfp28-4-1
+
+# Ports to disable (unused — not in any group)
+disabled_interfaces:
+  - qsfp28-2-1
+  - qsfp28-4-2
+  - qsfp28-4-3
+  - qsfp28-4-4
+
+# VLAN definitions
+# tagged_groups references keys from interface_groups above
+vlans:
+  - id: 100
+    name: Management
+    network: "192.168.100.0/24"
+    tagged_groups:
+      - uplink
+      - hosts
+
+  - id: 101
+    name: vMotion
+    network: "192.168.101.0/24"
+    mtu: 9212
+    tagged_groups:
+      - uplink
+      - hosts
+
+  - id: 102
+    name: vSAN
+    network: "192.168.102.0/24"
+    mtu: 9212
+    tagged_groups:
+      - uplink
+      - hosts
+
+  - id: 103
+    name: NSX-TEP
+    network: "192.168.103.0/24"
+    mtu: 9212
+    tagged_groups:
+      - uplink
+      - hosts
+
+  - id: 104
+    name: NSX-Edge-TEP
+    network: "192.168.104.0/24"
+    mtu: 9212
+    tagged_groups:
+      - uplink
+      - hosts
+
+  - id: 105
+    name: VM-Network
+    network: "192.168.105.0/24"
+    tagged_groups:
+      - uplink
+      - hosts
+    dhcp:
+      pool_name: dhcp-vm-pool
+      server_name: dhcp-vm
+      range_start: "192.168.105.100"
+      range_end: "192.168.105.200"
+      lease_time: "1d"
+
+  - id: 2
+    name: DMZ
+    network: "192.168.2.0/24"
+    tagged_groups:
+      - uplink
+      - hosts
+    dhcp:
+      pool_name: dhcp-dmz-pool
+      server_name: dhcp-dmz
+      range_start: "192.168.2.100"
+      range_end: "192.168.2.200"
+      lease_time: "1h"
+
+  - id: 60
+    name: NFS-Storage
+    mtu: 9212
+    tagged_groups:
+      - uplink
+      - storage
+
+# BGP
+bgp_router_id: "192.168.3.1"
+bgp_local_address: "192.168.3.1"
+bgp_peer_address: "192.168.3.248"
+bgp_peer_name: "watchguard"
+
+bgp_advertise_networks:
+  - "192.168.2.0/24"
+  - "192.168.100.0/24"
+  - "192.168.101.0/24"
+  - "192.168.102.0/24"
+  - "192.168.103.0/24"
+  - "192.168.104.0/24"
+  - "192.168.105.0/24"
