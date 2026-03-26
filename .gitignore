@@ -47,3 +47,7 @@ scripts/truenas/datasets/datasets.csv
 scripts/truenas/shares/config.env
 scripts/truenas/shares/shares.csv
 .DS_Store
+
+# Gitleaks secret scanning reports
+gitleaks-report.json
+results.sarif

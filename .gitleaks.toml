@@ -1,0 +1,54 @@
+# Gitleaks configuration for iac
+# Customizes secret detection rules and allowlists
+
+title = "iac Gitleaks Configuration"
+
+[extend]
+# Use the default Gitleaks ruleset as a base
+useDefault = true
+
+# Allowlist - Paths and patterns to exclude from scanning
+[allowlist]
+description = "Known false positives and IaC-specific exclusions"
+
+# Regex patterns that should not trigger alerts
+regexes = [
+    # Internal infrastructure hostnames (not secrets)
+    '''jameskilby\.cloud''',
+    # GitHub URLs
+    '''github\.com/jameskilbynet''',
+    # Terraform variable references (not actual values)
+    '''var\.\w+''',
+    # Ansible vault references
+    '''ansible-vault''',
+    # Placeholder/example values
+    '''your_token_here''',
+    '''your-token-here''',
+    '''CHANGEME''',
+    '''example\.com''',
+]
+
+# Paths to exclude from scanning
+paths = [
+    # Terraform lock files
+    '''.*\.terraform\.lock\.hcl$''',
+    # Terraform state files (should also be in .gitignore)
+    '''.*\.tfstate.*''',
+    # Documentation files with example secrets
+    '''.*\.md$''',
+    # Diagram files
+    '''diagrams/.*''',
+    # Lock files
+    '''.*-lock\.json$''',
+    '''.*\.lock$''',
+]
+
+# Commits to exclude from scanning (if needed)
+commits = [
+    # Add commit hashes here if historical commits contain known false positives
+]
+
+# Stopwords
+stopwords = [
+    # None configured - better to use allowlist
+]
