@@ -52,11 +52,48 @@
 
     - name: Deploy environment file
       ansible.builtin.copy:
-        src: "{{ aistack_env_src }}"
         dest: "{{ aistack_base_dir }}/.env"
         owner: "{{ aistack_user }}"
         group: "{{ aistack_group }}"
         mode: "0600"
+        content: |
+          OLLAMA_API_CREDENTIALS={{ OLLAMA_API_CREDENTIALS }}
+          OLLAMA_BASE_URL={{ OLLAMA_BASE_URL }}
+          INFERENCE_TEXT_MODEL={{ INFERENCE_TEXT_MODEL }}
+          INFERENCE_IMAGE_MODEL={{ INFERENCE_IMAGE_MODEL }}
+          DB_USER={{ DB_USER }}
+          DB_PASS={{ DB_PASS }}
+          WHISHPER_HOST={{ WHISHPER_HOST }}
+          WHISPER_MODELS={{ WHISPER_MODELS }}
+          PUID={{ PUID }}
+          PGID={{ PGID }}
+          DATA_DIR=/data
+          MEILI_ADDR={{ MEILI_ADDR }}
+          MEILI_MASTER_KEY={{ MEILI_MASTER_KEY }}
+          NEXTAUTH_URL={{ NEXTAUTH_URL }}
+          HOARDER_VERSION={{ HOARDER_VERSION }}
+          NEXTAUTH_SECRET={{ NEXTAUTH_SECRET }}
+          GRAFANA_USER={{ GRAFANA_USER }}
+          GRAFANA_ADMIN_PASSWORD={{ GRAFANA_ADMIN_PASSWORD }}
+          OTEL_ENVIRONMENT={{ OTEL_ENVIRONMENT }}
+          OTEL_CLUSTER={{ OTEL_CLUSTER }}
+          OTEL_COLLECTOR_ENDPOINT={{ OTEL_COLLECTOR_ENDPOINT }}
+          JAEGER_STORAGE_TYPE={{ JAEGER_STORAGE_TYPE }}
+          JAEGER_BADGER_EPHEMERAL={{ JAEGER_BADGER_EPHEMERAL }}
+          JAEGER_BADGER_CONSISTENCY={{ JAEGER_BADGER_CONSISTENCY }}
+          SMB_SERVER={{ SMB_SERVER }}
+          SMB_SHARE={{ SMB_SHARE }}
+          SMB_USERNAME={{ SMB_USERNAME }}
+          SMB_PASSWORD={{ SMB_PASSWORD }}
+          POSTGRES_DB={{ POSTGRES_DB }}
+          POSTGRES_USER={{ POSTGRES_USER }}
+          POSTGRES_PASSWORD={{ POSTGRES_PASSWORD }}
+          SEARXNG_SECRET={{ SEARXNG_SECRET }}
+          N8N_ENCRYPTION_KEY={{ N8N_ENCRYPTION_KEY }}
+          N8N_USER_MANAGEMENT_JWT_SECRET={{ N8N_USER_MANAGEMENT_JWT_SECRET }}
+          OPEN_TERMINAL_API_KEY={{ OPEN_TERMINAL_API_KEY }}
+          BACKUP_RETENTION_DAYS={{ BACKUP_RETENTION_DAYS }}
+          BACKUP_COMPRESS={{ BACKUP_COMPRESS }}
       tags: [config, env]
 
     - name: Deploy validation script
