@@ -4,7 +4,7 @@
   become: true
 
   vars:
-    portainer_agent_image: "portainer/agent:2.33.7"
+    portainer_agent_image: "portainer/agent:2.39.1"
     container_name: "portainer_agent"
     host_port: 9001
 
