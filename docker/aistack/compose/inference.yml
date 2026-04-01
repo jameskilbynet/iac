@@ -1,0 +1,278 @@
+# ============================================================================
+# INFERENCE LAYER
+# GPU-accelerated model inference: LLM, image generation, speech-to-text
+# ============================================================================
+services:
+  # Ollama - LLM inference server
+  ollama:
+    image: ollama/ollama:0.17.7
+    container_name: ${AISTACK_NAMESPACE}-ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 24G
+          cpus: '12.0'
+        reservations:
+          memory: 6G
+          cpus: '4.0'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - OLLAMA_KEEP_ALIVE=1h
+      - OLLAMA_ORIGINS=https://ollama.${DOMAIN},https://chat.${DOMAIN},https://n8n.${DOMAIN},https://smarterrouter.${DOMAIN}
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=3
+      - OLLAMA_NUM_GPU=1
+      - OLLAMA_DEBUG=0
+      - CUDA_MODULE_LOADING=LAZY
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=f16
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MODELS=/root/.ollama
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-ollama.rule=Host(`ollama.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-ollama.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-ollama.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-ollama.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-ollama.loadbalancer.server.port=11434"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-ollama.middlewares=${AISTACK_NAMESPACE}-auth"
+      - "traefik.http.middlewares.${AISTACK_NAMESPACE}-auth.basicauth.users=${OLLAMA_API_CREDENTIALS}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ollama_models:/root/.ollama
+
+  # ComfyUI - Image generation
+  comfyui:
+    image: ghcr.io/ai-dock/comfyui:latest-cuda
+    container_name: ${AISTACK_NAMESPACE}-comfyui
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8188/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - WEB_ENABLE_AUTH=false
+      - SERVERURL=https://comfyui.${DOMAIN}
+      - DIRECT_ADDRESS=comfyui.${DOMAIN}
+      - DIRECT_ADDRESS_GET_WAN=false
+      - CF_QUICK_TUNNELS=false
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '6.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - comfyui_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-comfyui.rule=Host(`comfyui.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-comfyui.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-comfyui.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-comfyui.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-comfyui.loadbalancer.server.port=8188"
+
+  # Whishper - Whisper transcription service
+  whishper:
+    image: pluja/whishper:v3.1.4
+    container_name: ${AISTACK_NAMESPACE}-whishper
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    security_opt:
+      - no-new-privileges:true
+    dns:
+      - 192.168.10.250
+      - 192.168.10.251
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - WHISPER_MODELS=${WHISPER_MODELS:-tiny,small}
+      - WHISPER_MODELS_DIR=/app/models
+      - PUBLIC_INTERNAL_API_HOST=http://127.0.0.1:8080
+      - PUBLIC_API_HOST=
+      - PUBLIC_WHISHPER_PROFILE=cuda
+      - WHISHPER_DB_URI=mongodb://root:example@mongo:27017/whishper?authSource=admin
+      - LIBRETRANSLATE_HOST=
+    extra_hosts:
+      - "translate:127.0.0.1"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - whishper_data:/app/data
+      - whishper_uploads:/app/uploads
+      - whishper_models:/app/models
+      - whishper_logs:/var/log/whishper
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-whishper.rule=Host(`whishper.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-whishper.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-whishper.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-whishper.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-whishper.loadbalancer.server.port=80"
+
+  # MongoDB - Database for Whishper (tightly coupled, kept with inference)
+  mongo:
+    image: mongo:7
+    container_name: ${AISTACK_NAMESPACE}-mongo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - mongo_data:/data/db
+    labels:
+      - "traefik.enable=false"
+
+  # Ollama Prometheus Exporter - Polls Ollama API and exposes metrics
+  # Queries /api/tags (available models) and /api/ps (loaded models)
+  # every scrape and exposes model counts, VRAM usage, and load state.
+  ollama-exporter:
+    image: python:3.12-alpine
+    container_name: ${AISTACK_NAMESPACE}-ollama-exporter
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        pip install --no-cache-dir prometheus_client requests > /dev/null 2>&1
+        python3 -u /app/exporter.py
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+        reservations:
+          memory: 32M
+          cpus: '0.05'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+      - traefik
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /opt/${AISTACK_NAMESPACE}/ollama-exporter/exporter.py:/app/exporter.py:ro
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      ollama:
+        condition: service_started
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${AISTACK_INTERNAL_SUBNET:-172.30.0.0/24}
+
+volumes:
+  ollama_models:
+  comfyui_data:
+  whishper_data:
+  whishper_uploads:
+  whishper_models:
+  whishper_logs:
+  mongo_data:

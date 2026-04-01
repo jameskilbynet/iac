@@ -1,0 +1,64 @@
+# ============================================================================
+# UPTIME KUMA LABELS (production only)
+# Adds Uptime Kuma auto-discovery labels to externally-facing services.
+# Included via COMPOSE_FILE in the production .env — not loaded in test/dev.
+# ============================================================================
+services:
+  # Automation
+  n8n:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-n8n.http.name=n8n"
+      - "kuma.${AISTACK_NAMESPACE}-n8n.http.url=https://n8n.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-n8n.http.interval=60"
+
+  # Langfuse
+  langfuse-web:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-langfuse.http.name=Langfuse"
+      - "kuma.${AISTACK_NAMESPACE}-langfuse.http.url=https://langfuse.${DOMAIN}/api/public/health"
+      - "kuma.${AISTACK_NAMESPACE}-langfuse.http.interval=60"
+
+  # Observability
+  jaeger:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-jaeger.http.name=Jaeger"
+      - "kuma.${AISTACK_NAMESPACE}-jaeger.http.url=https://jaeger.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-jaeger.http.interval=60"
+
+  prometheus:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-prometheus.http.name=AI Stack Prometheus"
+      - "kuma.${AISTACK_NAMESPACE}-prometheus.http.url=https://prometheus.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-prometheus.http.interval=60"
+
+  grafana:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-grafana.http.name=AI Stack Grafana"
+      - "kuma.${AISTACK_NAMESPACE}-grafana.http.url=https://grafana.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-grafana.http.interval=60"
+
+  # Interface
+  open-webui:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-openwebui.http.name=Open WebUI"
+      - "kuma.${AISTACK_NAMESPACE}-openwebui.http.url=https://chat.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-openwebui.http.interval=60"
+
+  open-terminal:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-openterminal.http.name=Open Terminal"
+      - "kuma.${AISTACK_NAMESPACE}-openterminal.http.url=https://terminal.${DOMAIN}/health"
+      - "kuma.${AISTACK_NAMESPACE}-openterminal.http.interval=60"
+
+  # Inference
+  comfyui:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-comfyui.http.name=ComfyUI"
+      - "kuma.${AISTACK_NAMESPACE}-comfyui.http.url=https://comfyui.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-comfyui.http.interval=60"
+
+  whishper:
+    labels:
+      - "kuma.${AISTACK_NAMESPACE}-whishper.http.name=Whishper"
+      - "kuma.${AISTACK_NAMESPACE}-whishper.http.url=https://whishper.${DOMAIN}/"
+      - "kuma.${AISTACK_NAMESPACE}-whishper.http.interval=60"

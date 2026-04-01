@@ -1,0 +1,175 @@
+# ============================================================================
+# DATA LAYER
+# Shared data infrastructure: relational DB, vector DB, document parsing, search
+# ============================================================================
+services:
+  # PostgreSQL - Relational database (shared by n8n, Langfuse)
+  postgres:
+    image: postgres:16.13-alpine
+    container_name: ${AISTACK_NAMESPACE}-postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - postgres_data:/var/lib/postgresql/data
+    labels:
+      - "traefik.enable=false"
+
+  # Qdrant - Vector database for RAG
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: ${AISTACK_NAMESPACE}-qdrant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__LOG_LEVEL=INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - qdrant_storage:/qdrant/storage
+    labels:
+      - "traefik.enable=false"
+
+  # Apache Tika - Document parsing for RAG
+  tika:
+    image: apache/tika:3.2.3.0
+    container_name: ${AISTACK_NAMESPACE}-tika
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/9998' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+
+  # SearxNG - Metasearch engine for RAG web search
+  searxng:
+    image: searxng/searxng:2026.2.23-4964d664f
+    container_name: ${AISTACK_NAMESPACE}-searxng
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+      - SEARXNG_BASE_URL=https://searxng.${DOMAIN}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /opt/${AISTACK_NAMESPACE}/searxng/settings.yml:/etc/searxng/settings.yml
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-searxng.rule=Host(`searxng.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-searxng.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-searxng.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-searxng.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-searxng.loadbalancer.server.port=8080"
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${AISTACK_INTERNAL_SUBNET:-172.30.0.0/24}
+
+volumes:
+  postgres_data:
+  qdrant_storage:

@@ -1,0 +1,257 @@
+# ============================================================================
+# OBSERVABILITY LAYER
+# Distributed tracing, metrics collection, and dashboards
+# ============================================================================
+services:
+  # Jaeger v2 - Distributed tracing backend (based on OpenTelemetry Collector)
+  jaeger:
+    image: jaegertracing/jaeger:2.15.0
+    container_name: ${AISTACK_NAMESPACE}-jaeger
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:16686/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - jaeger_data:/badger
+      - /opt/${AISTACK_NAMESPACE}/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-jaeger.rule=Host(`jaeger.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-jaeger.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-jaeger.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-jaeger.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-jaeger.loadbalancer.server.port=16686"
+
+  # OpenTelemetry Collector - Telemetry aggregation and routing
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: ${AISTACK_NAMESPACE}-otel-collector
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - OTEL_ENVIRONMENT=${OTEL_ENVIRONMENT:-homelab}
+      - OTEL_CLUSTER=${OTEL_CLUSTER:-aistack}
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /opt/${AISTACK_NAMESPACE}/otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    depends_on:
+      jaeger:
+        condition: service_started
+    labels:
+      - "traefik.enable=false"
+
+  # NVIDIA GPU Exporter - GPU metrics for Prometheus (via nvidia-smi)
+  nvidia-gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.4.1
+    container_name: ${AISTACK_NAMESPACE}-nvidia-gpu-exporter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+    labels:
+      - "traefik.enable=false"
+
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    container_name: ${AISTACK_NAMESPACE}-prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /opt/${AISTACK_NAMESPACE}/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-prometheus.rule=Host(`prometheus.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-prometheus.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-prometheus.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-prometheus.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-prometheus.loadbalancer.server.port=9090"
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: grafana/grafana:12.4.0
+    container_name: ${AISTACK_NAMESPACE}-grafana
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN}
+      # Use PostgreSQL instead of SQLite — SQLite fails on SMB/CIFS volumes
+      # and local-only SQLite is lost if the Docker host dies.
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=postgres:5432
+      - GF_DATABASE_NAME=${GRAFANA_DB:-grafana}
+      - GF_DATABASE_USER=${POSTGRES_USER}
+      - GF_DATABASE_PASSWORD=${POSTGRES_PASSWORD}
+      - GF_DATABASE_SSL_MODE=disable
+      # grafana-piechart-panel removed — Angular plugin, blocked in Grafana 12+
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - grafana_data:/var/lib/grafana
+      - /opt/${AISTACK_NAMESPACE}/grafana/provisioning:/etc/grafana/provisioning:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-grafana.rule=Host(`grafana.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-grafana.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-grafana.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-grafana.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-grafana.loadbalancer.server.port=3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${AISTACK_INTERNAL_SUBNET:-172.30.0.0/24}
+
+volumes:
+  jaeger_data:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/jaeger"
+  prometheus_data:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/prometheus"
+  grafana_data:

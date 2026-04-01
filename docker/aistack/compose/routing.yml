@@ -1,0 +1,90 @@
+# ============================================================================
+# ROUTING LAYER
+# Intelligent LLM request routing and model selection
+# ============================================================================
+services:
+  # SmarterRouter - Intelligent LLM routing
+  smarterrouter:
+    image: ghcr.io/peva3/smarterrouter:latest
+    container_name: ${AISTACK_NAMESPACE}-smarterrouter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - ROUTER_PROVIDER=ollama
+      - ROUTER_OLLAMA_URL=http://ollama:11434
+      - ROUTER_HOST=0.0.0.0
+      - ROUTER_PORT=11436
+      - ROUTER_EXTERNAL_MODEL_NAME=smarterrouter/main
+      - ROUTER_PREFER_SMALLER_MODELS=true
+      - ROUTER_PREFER_NEWER_MODELS=true
+      - ROUTER_TEMPERATURE=0.0
+      - ROUTER_MAX_TOKENS=50
+      - ROUTER_PROFILE_TIMEOUT=90
+      - ROUTER_GENERATION_TIMEOUT=120
+      - ROUTER_PROFILE_PROMPTS_PER_CATEGORY=3
+      - ROUTER_SIGNATURE_ENABLED=true
+      - "ROUTER_SIGNATURE_FORMAT=\nModel: {model}"
+      - ROUTER_CACHE_ENABLED=true
+      - ROUTER_CACHE_MAX_SIZE=500
+      - ROUTER_CACHE_TTL_SECONDS=3600
+      - ROUTER_DATABASE_URL=sqlite:////app/data/router.db
+      - ROUTER_POLLING_INTERVAL=60
+      - ROUTER_LOG_LEVEL=INFO
+      - ROUTER_LOG_FORMAT=text
+      - ROUTER_VRAM_MONITOR_ENABLED=true
+      - ROUTER_VRAM_AUTO_UNLOAD_ENABLED=true
+      - ROUTER_VRAM_UNLOAD_STRATEGY=lru
+      - ROUTER_BENCHMARK_SOURCES=huggingface,lmsys
+      - ROUTER_ADMIN_API_KEY=
+      - ROUTER_RATE_LIMIT_ENABLED=false
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - smarterrouter_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-smarterrouter.rule=Host(`smarterrouter.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-smarterrouter.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-smarterrouter.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-smarterrouter.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-smarterrouter.loadbalancer.server.port=11436"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11436/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      ollama:
+        condition: service_started
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${AISTACK_INTERNAL_SUBNET:-172.30.0.0/24}
+
+volumes:
+  smarterrouter_data:
