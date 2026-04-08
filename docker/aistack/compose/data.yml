@@ -159,6 +159,156 @@ services:
       - "traefik.http.routers.${AISTACK_NAMESPACE}-searxng.tls.certresolver=cloudflare"
       - "traefik.http.services.${AISTACK_NAMESPACE}-searxng.loadbalancer.server.port=8080"
 
+  # Qdrant Backup - Periodic snapshot via Qdrant REST API to NAS
+  # Qdrant's native .backup API creates crash-consistent snapshots
+  # per collection. This sidecar iterates all collections, snapshots
+  # each one, bundles them as a tarball, and writes to SMB-backed
+  # volume, retaining the last 7 copies.
+  qdrant-backup:
+    image: alpine:3.21
+    container_name: ${AISTACK_NAMESPACE}-qdrant-backup
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /backups && curl -sf http://qdrant:6333/healthz > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache curl jq > /dev/null 2>&1
+        echo "qdrant-backup: starting (interval=6h, retain=7)"
+        while true; do
+          STAMP=$$(date +%Y%m%d-%H%M%S)
+          TMPDIR=/tmp/qdrant-snap-$$STAMP
+          mkdir -p $$TMPDIR
+          FAILED=0
+
+          # Get all collection names
+          COLLECTIONS=$$(curl -sf http://qdrant:6333/collections | jq -r '.result.collections[].name')
+          if [ -z "$$COLLECTIONS" ]; then
+            echo "$$(date -Iseconds) backup FAILED: could not list collections (rc=$$?)"
+            rm -rf $$TMPDIR
+            sleep 21600
+            continue
+          fi
+
+          for COL in $$COLLECTIONS; do
+            # Create snapshot for this collection
+            SNAP_NAME=$$(curl -sf -X POST "http://qdrant:6333/collections/$$COL/snapshots" | jq -r '.result.name')
+            if [ -z "$$SNAP_NAME" ] || [ "$$SNAP_NAME" = "null" ]; then
+              echo "$$(date -Iseconds) backup FAILED: snapshot creation failed for $$COL"
+              FAILED=1
+              break
+            fi
+
+            # Download it
+            curl -sf "http://qdrant:6333/collections/$$COL/snapshots/$$SNAP_NAME" \
+              -o "$$TMPDIR/$$COL-$$SNAP_NAME"
+            if [ $$? -ne 0 ]; then
+              echo "$$(date -Iseconds) backup FAILED: download failed for $$COL"
+              FAILED=1
+              break
+            fi
+
+            # Clean up snapshot from Qdrant storage
+            curl -sf -X DELETE "http://qdrant:6333/collections/$$COL/snapshots/$$SNAP_NAME" > /dev/null
+          done
+
+          if [ $$FAILED -eq 0 ]; then
+            tar czf /backups/qdrant-$$STAMP.tar.gz -C $$TMPDIR .
+            echo "$$(date -Iseconds) backup ok: /backups/qdrant-$$STAMP.tar.gz"
+            # Rotate: keep newest 7
+            ls -1t /backups/qdrant-*.tar.gz 2>/dev/null | tail -n +8 | xargs rm -f --
+          fi
+
+          rm -rf $$TMPDIR
+          sleep 21600
+        done
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - qdrant_backups:/backups
+    networks:
+      - aistack-internal
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      - qdrant
+
+  # PostgreSQL Backup - Periodic pg_dump to NAS
+  # Runs pg_dumpall every 6 hours and writes gzipped SQL dumps to an
+  # SMB-backed volume, retaining the last 7 copies. Uses the same
+  # postgres:16-alpine image so pg_dump version always matches the server.
+  postgres-backup:
+    image: postgres:16.13-alpine
+    container_name: ${AISTACK_NAMESPACE}-postgres-backup
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h postgres -U ${POSTGRES_USER} || exit 1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - PGHOST=postgres
+      - PGUSER=${POSTGRES_USER}
+      - PGPASSWORD=${POSTGRES_PASSWORD}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "postgres-backup: starting (interval=6h, retain=7)"
+        while true; do
+          STAMP=$$(date +%Y%m%d-%H%M%S)
+          DEST=/backups/postgres-$${STAMP}.sql.gz
+          pg_dumpall -h postgres -U $${PGUSER} | gzip > "$$DEST"
+          if [ $$? -eq 0 ] && [ -s "$$DEST" ]; then
+            echo "$$(date -Iseconds) backup ok: $$DEST"
+            # Rotate: keep newest 7
+            ls -1t /backups/postgres-*.sql.gz 2>/dev/null | tail -n +8 | xargs rm -f --
+          else
+            echo "$$(date -Iseconds) backup FAILED (rc=$$?)"
+            rm -f "$$DEST"
+          fi
+          sleep 21600
+        done
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - postgres_backups:/backups
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 networks:
   traefik:
     external: true
@@ -173,3 +323,13 @@ networks:
 volumes:
   postgres_data:
   qdrant_storage:
+  postgres_backups:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/backups/postgres"
+  qdrant_backups:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/backups/qdrant"

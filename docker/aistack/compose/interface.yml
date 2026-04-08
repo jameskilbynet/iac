@@ -1,0 +1,274 @@
+# ============================================================================
+# INTERFACE LAYER
+# User-facing UIs and middleware that connects them to backend services
+# ============================================================================
+services:
+  # Open WebUI with OpenTelemetry support
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.8.10
+    container_name: ${AISTACK_NAMESPACE}-open-webui
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - 'OLLAMA_BASE_URL=http://ollama:11434'
+      - ENABLE_RAG_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - RAG_WEB_SEARCH_RESULT_COUNT=5
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=10
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://smarterrouter:11436/v1;http://ollama:11434/v1;http://pipelines:9099
+      - OPENAI_API_KEY=smarterrouter;ollama;${PIPELINES_API_KEY:-0p3n-w3bu!}
+      - DEFAULT_MODELS=${OPENWEBUI_DEFAULT_MODEL:-smarterrouter/main}
+      - VECTOR_DB=qdrant
+      - QDRANT_URI=http://qdrant:6333
+      - TIKA_SERVER_URL=http://tika:9998
+      - WEBUI_NAME=AI Stack
+      - WEBUI_URL=https://chat.${DOMAIN}
+      - ENABLE_SIGNUP=${OPENWEBUI_ENABLE_SIGNUP:-false}
+      - DEFAULT_USER_ROLE=${OPENWEBUI_DEFAULT_USER_ROLE:-user}
+      - ENABLE_IMAGE_GENERATION=true
+      - IMAGE_GENERATION_ENGINE=comfyui
+      - COMFYUI_BASE_URL=http://comfyui:8188
+      - AUDIO_STT_ENGINE=openai
+      - AUDIO_STT_OPENAI_API_BASE_URL=http://whishper:8080/v1
+      - ENABLE_COMMUNITY_SHARING=false
+      - TASK_MODEL=${OPENWEBUI_TASK_MODEL:-smarterrouter/main}
+      - ENABLE_ADMIN_EXPORT=true
+      # OpenTelemetry
+      - ENABLE_OTEL=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=open-webui
+      - OTEL_TRACES_EXPORTER=otlp
+      - TERMINAL_SERVER_CONNECTIONS=[{"id":"${AISTACK_NAMESPACE}-terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY}","name":"${AISTACK_NAMESPACE} Terminal","auth_type":"bearer","config":{"access_grants":[]}}]
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - openwebui_data:/app/backend/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-webui.rule=Host(`chat.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-webui.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-webui.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-webui.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-open-webui.loadbalancer.server.port=8080"
+    depends_on:
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      tika:
+        condition: service_started
+      searxng:
+        condition: service_started
+      open-terminal:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      langfuse-web:
+        condition: service_healthy
+      pipelines:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # Open WebUI Backup - Periodic SQLite backup to NAS
+  # SQLite does not work reliably over SMB/CIFS (file-locking issues), so
+  # Open WebUI keeps its data on a local Docker volume. This sidecar runs
+  # `sqlite3 .backup` every 6 hours and writes crash-consistent snapshots
+  # to an SMB-backed volume, retaining the last 7 copies.
+  open-webui-backup:
+    image: keinos/sqlite3:3.49.1
+    container_name: ${AISTACK_NAMESPACE}-open-webui-backup
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        echo "open-webui-backup: starting (interval=6h, retain=7)"
+        while true; do
+          STAMP=$$(date +%Y%m%d-%H%M%S)
+          SRC=/data/webui.db
+          DEST=/backups/webui-$${STAMP}.db
+          if [ -f "$$SRC" ]; then
+            sqlite3 "$$SRC" ".backup '$$DEST'"
+            if [ $$? -eq 0 ]; then
+              echo "$$(date -Iseconds) backup ok: $$DEST"
+              # Rotate: keep newest 7 backups
+              ls -1t /backups/webui-*.db 2>/dev/null | tail -n +8 | xargs rm -f --
+              # Also back up uploads directory
+              if [ -d /data/uploads ] && [ "$$(ls -A /data/uploads 2>/dev/null)" ]; then
+                tar czf /backups/uploads-$${STAMP}.tar.gz -C /data uploads
+                ls -1t /backups/uploads-*.tar.gz 2>/dev/null | tail -n +4 | xargs rm -f --
+              fi
+            else
+              echo "$$(date -Iseconds) backup FAILED (rc=$$?)"
+            fi
+          else
+            echo "$$(date -Iseconds) waiting for $$SRC to appear…"
+          fi
+          sleep 21600
+        done
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 32M
+          cpus: '0.05'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - openwebui_data:/data:ro
+      - openwebui_backups:/backups
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      open-webui:
+        condition: service_started
+
+  # Open WebUI Pipelines - Plugin/filter framework (hosts Langfuse filter pipeline)
+  # NOTE: Pipelines has no semver releases — :main is the only actively published
+  # tag. Pin to a digest for reproducibility; update by pulling a fresh digest:
+  #   docker pull ghcr.io/open-webui/pipelines:main
+  #   docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/open-webui/pipelines:main
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main@sha256:a6acd1e02275b42fc0428bfa25089373c803c8e6318923d6e8b199be8935140f
+    container_name: ${AISTACK_NAMESPACE}-pipelines
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9099/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      # Auto-download Langfuse v3 filter pipeline on startup
+      - PIPELINES_URLS=https://raw.githubusercontent.com/open-webui/pipelines/refs/heads/main/examples/filters/langfuse_v3_filter_pipeline.py
+      # Langfuse connection (internal network)
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_HOST=http://langfuse-web:3000
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - pipelines_data:/app/pipelines
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      langfuse-web:
+        condition: service_healthy
+
+  # Open Terminal
+  open-terminal:
+    image: ghcr.io/open-webui/open-terminal:0.11.23
+    container_name: ${AISTACK_NAMESPACE}-open-terminal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - OPEN_TERMINAL_API_KEY=${OPEN_TERMINAL_API_KEY}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - open_terminal_data:/home/user
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-terminal.rule=Host(`terminal.${DOMAIN}`)"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-terminal.entrypoints=websecure"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-terminal.tls=true"
+      - "traefik.http.routers.${AISTACK_NAMESPACE}-open-terminal.tls.certresolver=cloudflare"
+      - "traefik.http.services.${AISTACK_NAMESPACE}-open-terminal.loadbalancer.server.port=8000"
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: ${AISTACK_INTERNAL_SUBNET:-172.30.0.0/24}
+
+volumes:
+  openwebui_data:
+  openwebui_backups:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/backups/open-webui"
+  pipelines_data:
+  open_terminal_data:

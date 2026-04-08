@@ -9,9 +9,12 @@ datasources:
     isDefault: true
     editable: true
     jsonData:
-      timeInterval: "5s"
+      timeInterval: "15s"
       queryTimeout: "300s"
       httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: jaeger
 
   - name: Jaeger
     uid: jaeger

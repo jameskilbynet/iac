@@ -2,7 +2,8 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
   external_labels:
-    cluster: 'aistack-homelab'
+    cluster: '{{ aistack_namespace }}'
+    environment: '{{ otel_environment | default("homelab") }}'
 
 # Alertmanager configuration (optional)
 # alerting:
@@ -37,6 +38,12 @@ scrape_configs:
   - job_name: 'nvidia-gpu'
     static_configs:
       - targets: ['nvidia-gpu-exporter:9835']
+    scrape_interval: 15s
+
+  # Ollama metrics (via polling exporter sidecar)
+  - job_name: 'ollama'
+    static_configs:
+      - targets: ['ollama-exporter:9394']
     scrape_interval: 15s
 
   # Traefik metrics (from main traefik instance)

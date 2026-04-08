@@ -52,7 +52,7 @@ services:
     container_name: ${AISTACK_NAMESPACE}-otel-collector
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
+      test: ["CMD", "curl", "--silent", "--fail", "http://localhost:13133/"]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -247,11 +247,11 @@ volumes:
   jaeger_data:
     driver_opts:
       type: cifs
-      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
       device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/jaeger"
   prometheus_data:
     driver_opts:
       type: cifs
-      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,file_mode=0777,dir_mode=0777"
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
       device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/prometheus"
   grafana_data:

@@ -64,6 +64,155 @@ services:
       ollama:
         condition: service_started
 
+  # n8n Git Backup - Exports workflows & credentials via n8n REST API,
+  # commits changes to a local git repo every 6h, and optionally pushes
+  # to a remote GitHub repository.
+  # Git history gives point-in-time recovery for any workflow version.
+  #
+  # Required .env vars:
+  #   N8N_BACKUP_API_KEY   - generate in n8n UI: Settings > API > Create API Key
+  #
+  # Optional .env vars for GitHub push:
+  #   N8N_BACKUP_GIT_REPO  - GitHub repo URL (e.g. https://github.com/user/n8n-backups.git)
+  #   N8N_BACKUP_GIT_TOKEN - GitHub PAT with repo scope
+  n8n-backup:
+    image: alpine:3.21
+    container_name: ${AISTACK_NAMESPACE}-n8n-backup
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /backups/.git && curl -sf http://n8n:5678/healthz > /dev/null"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+      - traefik          # needed for outbound access to GitHub
+    environment:
+      - N8N_HOST=http://n8n:5678
+      - N8N_API_KEY=${N8N_BACKUP_API_KEY}
+      - GIT_REPO=${N8N_BACKUP_GIT_REPO:-}
+      - GIT_TOKEN=${N8N_BACKUP_GIT_TOKEN:-}
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        apk add --no-cache curl jq git > /dev/null 2>&1
+
+        cd /backups
+        if [ ! -d .git ]; then
+          git init
+          git config user.email "n8n-backup@aistack.local"
+          git config user.name "n8n-backup"
+          echo "*.tmp" > .gitignore
+          git add .gitignore && git commit -m "init" --quiet
+        fi
+
+        # ── Configure GitHub remote if credentials are provided ────────
+        if [ -n "$$GIT_REPO" ] && [ -n "$$GIT_TOKEN" ]; then
+          # Inject token into repo URL: https://TOKEN@github.com/user/repo.git
+          AUTHED_URL=$$(echo "$$GIT_REPO" | sed "s|https://|https://$${GIT_TOKEN}@|")
+          git remote remove origin 2>/dev/null
+          git remote add origin "$$AUTHED_URL"
+          git config push.default current
+          # Pull existing history if remote is non-empty
+          git fetch origin main 2>/dev/null && git reset --soft origin/main 2>/dev/null || true
+          echo "n8n-backup: GitHub remote configured"
+        fi
+
+        echo "n8n-backup: starting (interval=6h)"
+        while true; do
+          STAMP=$$(date -Iseconds)
+          FAILED=0
+
+          # ── Export workflows ──────────────────────────────────────────
+          mkdir -p workflows
+          WORKFLOWS=$$(curl -sf -H "X-N8N-API-KEY: $${N8N_API_KEY}" \
+            "$${N8N_HOST}/api/v1/workflows?limit=250")
+          if [ -z "$$WORKFLOWS" ]; then
+            echo "$$STAMP backup FAILED: could not fetch workflows"
+            sleep 21600
+            continue
+          fi
+
+          # Clear stale files so deleted workflows don't linger
+          rm -f workflows/*.json
+
+          echo "$$WORKFLOWS" | jq -c '.data[]' | while read -r WF; do
+            WF_ID=$$(echo "$$WF" | jq -r '.id')
+            WF_NAME=$$(echo "$$WF" | jq -r '.name' | tr '/' '_')
+            # Fetch full workflow (includes nodes, connections)
+            curl -sf -H "X-N8N-API-KEY: $${N8N_API_KEY}" \
+              "$${N8N_HOST}/api/v1/workflows/$$WF_ID" | jq '.' \
+              > "workflows/$${WF_ID}-$${WF_NAME}.json" || FAILED=1
+          done
+
+          # ── Export credentials (metadata only, secrets are not exposed) ─
+          mkdir -p credentials
+          rm -f credentials/*.json
+          CREDS=$$(curl -sf -H "X-N8N-API-KEY: $${N8N_API_KEY}" \
+            "$${N8N_HOST}/api/v1/credentials?limit=250")
+          if [ -n "$$CREDS" ]; then
+            echo "$$CREDS" | jq -c '.data[]' | while read -r CR; do
+              CR_ID=$$(echo "$$CR" | jq -r '.id')
+              CR_NAME=$$(echo "$$CR" | jq -r '.name' | tr '/' '_')
+              echo "$$CR" | jq '.' > "credentials/$${CR_ID}-$${CR_NAME}.json"
+            done
+          fi
+
+          # ── Export tags ────────────────────────────────────────────────
+          mkdir -p tags
+          rm -f tags/*.json
+          TAGS=$$(curl -sf -H "X-N8N-API-KEY: $${N8N_API_KEY}" \
+            "$${N8N_HOST}/api/v1/tags?limit=250")
+          if [ -n "$$TAGS" ]; then
+            echo "$$TAGS" | jq '.' > "tags/all-tags.json"
+          fi
+
+          # ── Commit and push if anything changed ──────────────────────
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "backup $$STAMP" --quiet
+            echo "$$STAMP backup ok: committed changes"
+            # Push to GitHub if remote is configured
+            if git remote get-url origin >/dev/null 2>&1; then
+              if git push origin HEAD:main --quiet 2>&1; then
+                echo "$$STAMP push ok"
+              else
+                echo "$$STAMP push FAILED (will retry next cycle)"
+              fi
+            fi
+          else
+            echo "$$STAMP backup ok: no changes"
+          fi
+
+          sleep 21600
+        done
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - n8n_backups:/backups
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      n8n:
+        condition: service_started
+
 networks:
   traefik:
     external: true
@@ -77,3 +226,8 @@ networks:
 
 volumes:
   n8n_data:
+  n8n_backups:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE}/backups/n8n"

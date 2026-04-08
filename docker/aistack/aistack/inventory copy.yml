@@ -1,0 +1,20 @@
+all:
+  children:
+
+    production:
+      hosts:
+        docker-host:
+          ansible_host: uk-bhr-p-doc-1.example.com
+          ansible_user: w20kilja
+          ansible_become: true
+          # Env filename relative to aistack_src (resolved automatically in pre_tasks)
+          aistack_env_file: ".env"
+
+    test:
+      hosts:
+        docker-host-test:
+          ansible_host: REPLACE_WITH_TEST_VM_IP
+          ansible_user: w20kilja
+          ansible_become: true
+          # Env filename relative to aistack_src (resolved automatically in pre_tasks)
+          aistack_env_file: ".env.test"

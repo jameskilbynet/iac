@@ -1,0 +1,49 @@
+# ============================================================================
+# NO-GPU OVERRIDE
+# Use on hosts without NVIDIA hardware.
+# Enable by adding to your .env:
+#   COMPOSE_FILE=docker-compose.yml:compose/no-gpu.yml
+#
+# Removes NVIDIA device reservations from inference services and disables
+# the GPU exporter. Ollama, ComfyUI, and Whishper will run in CPU mode —
+# performance will be lower but the stack will start without errors.
+# ============================================================================
+services:
+  ollama:
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '8.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices: []
+    environment:
+      - OLLAMA_NUM_GPU=0
+
+  comfyui:
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+          devices: []
+
+  whishper:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+          devices: []
+
+  # nvidia-gpu-exporter is intentionally NOT overridden here.
+  # If a GPU or vGPU is available, it will start from the base config and
+  # collect metrics. Only remove or profile-gate it if there is truly no GPU.

@@ -6,7 +6,8 @@ general:
 server:
   limiter: false
   public_instance: false
-  secret_key: "change-me"
+  # secret_key is set automatically by the container entrypoint from
+  # the SEARXNG_SECRET environment variable — do not hardcode here.
   trust_x_forwarded_for: false
   image_proxy: true
   

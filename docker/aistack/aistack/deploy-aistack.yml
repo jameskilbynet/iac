@@ -1,0 +1,695 @@
+---
+# AI Stack Deployment Playbook
+# Ensures all directories, configuration files, and permissions are set correctly
+# on the Docker host before the stack is deployed.
+#
+# Usage:
+#   ansible-playbook -i inventory.yml deploy-aistack.yml
+#   ansible-playbook -i inventory.yml deploy-aistack.yml --tags config
+#   ansible-playbook -i inventory.yml deploy-aistack.yml --tags deploy
+
+- name: Deploy AI Stack
+  hosts: all
+  become: true
+  vars:
+    # ── Instance identity ────────────────────────────────────────────────────
+    # aistack_namespace defaults to 'aistack' (set in pre_tasks below).
+    # Override via --extra-vars "aistack_namespace=aistack-prod" to run
+    # multiple instances side-by-side on the same host.
+    # Must match AISTACK_NAMESPACE (and COMPOSE_PROJECT_NAME) in the .env file.
+    #
+    # NOTE: aistack_namespace cannot self-reference here (Ansible recursive
+    # template error), so the default is applied in a pre_task instead.
+    aistack_base_dir: "/opt/{{ aistack_namespace }}"
+    aistack_user: "1000"
+    aistack_group: "1000"
+
+  pre_tasks:
+    # ─── Default aistack_namespace ──────────────────────────────────────────
+    # Only runs when aistack_namespace is not supplied via --extra-vars.
+    - name: Default aistack_namespace to 'aistack'
+      ansible.builtin.set_fact:
+        aistack_namespace: "aistack"
+      when: aistack_namespace is not defined
+      tags: always
+
+    # ─── Resolve source directory ───────────────────────────────────────────
+    # playbook_dir is always the directory containing this playbook file
+    # (i.e. the aistack/ ansible subdirectory, NOT the repo root).
+    # docker-compose.yml lives one level up in the repo root.
+    # We detect both cases so the playbook also works correctly when Semaphore
+    # is configured with the repo root as the project path.
+    - name: Detect aistack repository root
+      ansible.builtin.set_fact:
+        aistack_src: >-
+          {{ playbook_dir
+             if lookup('fileglob', playbook_dir ~ '/docker-compose.yml') | length > 0
+             else playbook_dir ~ '/..' }}
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+    - name: Set env file source path
+      ansible.builtin.set_fact:
+        aistack_env_src: "{{ aistack_src ~ '/' ~ (aistack_env_file | default('.env')) }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+    - name: Verify env file exists on controller
+      ansible.builtin.stat:
+        path: "{{ aistack_env_src }}"
+      register: env_file_stat
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+    - name: Fail with a clear message if env file is missing
+      ansible.builtin.fail:
+        msg: >
+          Environment file not found: {{ aistack_env_src }}
+          Create it by copying .env.example and filling in your values:
+            cp {{ aistack_src }}/.env.example {{ aistack_env_src }}
+          Or pass a different file with --extra-vars "aistack_env_file=.env.test"
+      when: not env_file_stat.stat.exists
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+    - name: Show resolved source paths
+      ansible.builtin.debug:
+        msg:
+          - "aistack_src    : {{ aistack_src }}"
+          - "aistack_env_src: {{ aistack_env_src }}"
+          - "aistack_namespace: {{ aistack_namespace }}"
+          - "aistack_base_dir : {{ aistack_base_dir }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      tags: always
+
+  tasks:
+    # ─── Directory Structure ───────────────────────────────────────────
+    - name: Create AI Stack directory structure
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0755"
+      loop:
+        - "{{ aistack_base_dir }}"
+        - "{{ aistack_base_dir }}/searxng"
+        - "{{ aistack_base_dir }}/jaeger"
+        - "{{ aistack_base_dir }}/otel-collector"
+        - "{{ aistack_base_dir }}/prometheus"
+        - "{{ aistack_base_dir }}/grafana"
+        - "{{ aistack_base_dir }}/grafana/provisioning"
+        - "{{ aistack_base_dir }}/grafana/provisioning/datasources"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards/json"
+        - "{{ aistack_base_dir }}/ollama-exporter"
+      tags: [config, directories]
+
+    # ─── Docker Compose & Environment ──────────────────────────────────
+    - name: Create compose layer directory
+      ansible.builtin.file:
+        path: "{{ aistack_base_dir }}/compose"
+        state: directory
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0755"
+      tags: [config, compose, directories]
+
+    - name: Deploy docker-compose.yml (orchestrator)
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/docker-compose.yml"
+        dest: "{{ aistack_base_dir }}/docker-compose.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      tags: [config, compose]
+
+    - name: Deploy compose layer files
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/compose/{{ item }}"
+        dest: "{{ aistack_base_dir }}/compose/{{ item }}"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      loop:
+        - inference.yml
+        - interface.yml
+        - routing.yml
+        - data.yml
+        - observability.yml
+        - langfuse.yml
+        - automation.yml
+        - no-gpu.yml
+      tags: [config, compose]
+
+    - name: Deploy environment file
+      ansible.builtin.copy:
+        src: "{{ aistack_env_src }}"
+        dest: "{{ aistack_base_dir }}/.env"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0600"
+      tags: [config, env]
+
+    - name: Deploy validation script
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/validate-deployment.sh"
+        dest: "{{ aistack_base_dir }}/validate-deployment.sh"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0755"
+      tags: [config]
+
+    # ─── SearxNG Configuration ─────────────────────────────────────────
+    - name: Deploy SearxNG settings
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/searxng/settings.yml"
+        dest: "{{ aistack_base_dir }}/searxng/settings.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart searxng
+      tags: [config, searxng]
+
+    # ─── Jaeger Configuration ──────────────────────────────────────────
+    - name: Deploy Jaeger config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/jaeger/config.yaml"
+        dest: "{{ aistack_base_dir }}/jaeger/config.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart jaeger
+      tags: [config, jaeger]
+
+    # ─── OpenTelemetry Collector Configuration ─────────────────────────
+    - name: Deploy OpenTelemetry Collector config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/otel-collector/config.yaml"
+        dest: "{{ aistack_base_dir }}/otel-collector/config.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart otel-collector
+      tags: [config, otel]
+
+    # ─── Ollama Exporter ─────────────────────────────────────────────
+    - name: Deploy Ollama exporter script
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/ollama-exporter/exporter.py"
+        dest: "{{ aistack_base_dir }}/ollama-exporter/exporter.py"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      tags: [config, ollama]
+
+    # ─── Prometheus Configuration ──────────────────────────────────────
+    - name: Deploy Prometheus config
+      ansible.builtin.template:
+        src: "{{ aistack_src }}/prometheus/prometheus.yml"
+        dest: "{{ aistack_base_dir }}/prometheus/prometheus.yml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      vars:
+        otel_environment: "{{ lookup('ansible.builtin.pipe', 'grep ^OTEL_ENVIRONMENT= ' ~ aistack_env_src ~ ' | cut -d= -f2-') | default('homelab') }}"
+      notify: Restart prometheus
+      tags: [config, prometheus]
+
+    # ─── Grafana Provisioning ──────────────────────────────────────────
+    - name: Deploy Grafana datasources config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/datasources/datasources.yaml"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/datasources/datasources.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    - name: Deploy Grafana dashboards provisioning config
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/dashboards/dashboards.yaml"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/dashboards/dashboards.yaml"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    - name: Deploy Grafana dashboard JSON files
+      ansible.builtin.copy:
+        src: "{{ aistack_src }}/grafana/provisioning/dashboards/json/"
+        dest: "{{ aistack_base_dir }}/grafana/provisioning/dashboards/json/"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+        directory_mode: "0755"
+      notify: Restart grafana
+      tags: [config, grafana]
+
+    # ─── Permissions Verification ──────────────────────────────────────
+    - name: Ensure config files are read-only for containers
+      ansible.builtin.file:
+        path: "{{ item }}"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0644"
+      loop:
+        - "{{ aistack_base_dir }}/searxng/settings.yml"
+        - "{{ aistack_base_dir }}/jaeger/config.yaml"
+        - "{{ aistack_base_dir }}/otel-collector/config.yaml"
+        - "{{ aistack_base_dir }}/prometheus/prometheus.yml"
+        - "{{ aistack_base_dir }}/grafana/provisioning/datasources/datasources.yaml"
+        - "{{ aistack_base_dir }}/grafana/provisioning/dashboards/dashboards.yaml"
+        - "{{ aistack_base_dir }}/ollama-exporter/exporter.py"
+      tags: [config, permissions]
+
+    - name: Ensure OpenWebUI signups are enabled
+      ansible.builtin.lineinfile:
+        path: "{{ aistack_base_dir }}/.env"
+        regexp: '^#?\s*OPENWEBUI_ENABLE_SIGNUP='
+        line: 'OPENWEBUI_ENABLE_SIGNUP=true'
+      tags: [config, env, openwebui]
+
+    - name: Ensure .env file is restricted
+      ansible.builtin.file:
+        path: "{{ aistack_base_dir }}/.env"
+        owner: "{{ aistack_user }}"
+        group: "{{ aistack_group }}"
+        mode: "0600"
+      tags: [config, permissions]
+
+    # ─── NAS Directory Provisioning ────────────────────────────────────
+    # SMB volumes (Jaeger, Prometheus) require their subdirectories to exist
+    # on the share before Docker can mount them. This block mounts the share
+    # temporarily, creates any missing namespace directories, then unmounts.
+    # Credentials are read from the already-deployed .env via a short-lived
+    # credentials file — avoids special-character issues (spaces, commas) in
+    # passwords when passed inline to the -o option string.
+    # The block is idempotent — existing directories are left unchanged.
+    #
+    # Skip this block entirely by passing:
+    #   --extra-vars "aistack_provision_nas=false"
+    # Required when the NAS is not reachable from this host. In that case
+    # you must also replace the CIFS driver_opts in observability.yml with
+    # local volumes, or pre-create the share directories by another means.
+
+    - name: Ensure cifs-utils is installed
+      ansible.builtin.package:
+        name: cifs-utils
+        state: present
+      when: aistack_provision_nas | default(true) | bool
+      tags: [deploy, smb]
+
+    - name: Read SMB_SERVER from env file for connectivity check
+      ansible.builtin.shell:
+        cmd: "grep '^SMB_SERVER=' {{ aistack_base_dir }}/.env | cut -d= -f2- | tr -d '\"'"
+        executable: /bin/bash
+      register: _smb_server_raw
+      changed_when: false
+      when: aistack_provision_nas | default(true) | bool
+      tags: [deploy, smb]
+
+    - name: Check NAS is reachable on SMB port 445
+      ansible.builtin.wait_for:
+        host: "{{ _smb_server_raw.stdout | trim }}"
+        port: 445
+        timeout: 10
+        msg: >
+          NAS host '{{ _smb_server_raw.stdout | trim }}' is not reachable on port 445 from this host.
+          If this host cannot reach the NAS (e.g. it is a cloud VM without VPN access),
+          set --extra-vars "aistack_provision_nas=false" and replace the CIFS
+          driver_opts in compose/observability.yml with local volumes.
+      when: aistack_provision_nas | default(true) | bool
+      tags: [deploy, smb]
+
+    - name: Provision NAS directories for SMB volumes
+      when: aistack_provision_nas | default(true) | bool
+      block:
+        - name: Create temporary NAS mount point
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: _nasmount
+          register: _nas_tmp
+
+        - name: Write temporary CIFS credentials file
+          ansible.builtin.shell:
+            # Use grep/cut to read values — avoids bash misinterpreting unquoted
+            # values that contain spaces (e.g. SMB_PASSWORD=sr71 blackbird).
+            # 'source .env' treats "VAR=val1 val2" as a pre-assignment for
+            # command "val2", leaving VAR empty. grep/cut reads the raw string.
+            # The sed strip removes surrounding quotes if the value is quoted.
+            cmd: |
+              ENV="{{ aistack_base_dir }}/.env"
+              _read() { grep "^${1}=" "$ENV" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/'; }
+              SMB_USERNAME=your_username
+              SMB_PASSWORD=your_password_here
+              SMB_DOMAIN=$(_read SMB_DOMAIN)
+              CREDS=$(mktemp)
+              chmod 600 "$CREDS"
+              printf 'username=${SMB_USERNAME}"$SMB_USERNAME" "$SMB_PASSWORD" > "$CREDS"
+              # domain is optional — set SMB_DOMAIN in .env if your NAS requires it
+              # (common for Synology, QNAP, or Windows Server shares)
+              if [ -n "$SMB_DOMAIN" ]; then
+                printf 'domain=%s\n' "$SMB_DOMAIN" >> "$CREDS"
+              fi
+              echo "$CREDS"
+            executable: /bin/bash
+          register: _creds_file
+          changed_when: true
+          no_log: true
+
+        - name: Mount NAS share using credentials file
+          ansible.builtin.shell:
+            # Also use grep/cut here for SMB_SERVER and SMB_SHARE to be consistent
+            # and safe, even though those values don't currently contain spaces.
+            cmd: |
+              ENV="{{ aistack_base_dir }}/.env"
+              _read() { grep "^${1}=" "$ENV" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/'; }
+              SMB_SERVER=$(_read SMB_SERVER)
+              SMB_SHARE=$(_read SMB_SHARE)
+              mount -t cifs "//${SMB_SERVER}/${SMB_SHARE}" "{{ _nas_tmp.path }}" \
+                -o "credentials={{ _creds_file.stdout | trim }},vers=3.0,file_mode=0777,dir_mode=0777"
+            executable: /bin/bash
+          register: _nas_mount
+          no_log: true
+          failed_when: false
+
+        - name: Capture kernel log for mount failure diagnosis
+          ansible.builtin.command:
+            cmd: dmesg
+          register: _dmesg
+          changed_when: false
+          failed_when: false
+          when: _nas_mount.rc != 0
+
+        - name: Fail with diagnostic including kernel messages
+          ansible.builtin.fail:
+            msg: |
+              NAS mount failed (rc={{ _nas_mount.rc }}).
+              Kernel messages (last 8 lines):
+              {{ _dmesg.stdout_lines[-8:] | join('\n') }}
+              ---
+              Check SMB_SERVER / SMB_SHARE / SMB_USERNAME / SMB_PASSWORD in {{ aistack_base_dir }}/.env
+              If this host cannot reach the NAS, rerun with --extra-vars "aistack_provision_nas=false"
+          when: _nas_mount.rc != 0
+
+        - name: Ensure namespace subdirectories exist on NAS
+          ansible.builtin.file:
+            path: "{{ _nas_tmp.path }}/{{ aistack_namespace }}/{{ item }}"
+            state: directory
+            mode: "0777"
+          loop:
+            - jaeger
+            - prometheus
+            - prometheus-config
+            - backups/n8n
+            - backups/open-webui
+            - backups/postgres
+            - backups/qdrant
+
+      always:
+        - name: Remove temporary CIFS credentials file
+          ansible.builtin.file:
+            path: "{{ _creds_file.stdout | trim }}"
+            state: absent
+          when: _creds_file is defined and (_creds_file.stdout | default('')) | trim != ''
+          failed_when: false
+          no_log: true
+
+        - name: Unmount NAS share
+          ansible.builtin.command:
+            cmd: "umount {{ _nas_tmp.path }}"
+          when: _nas_tmp is defined
+          failed_when: false
+
+        - name: Remove temporary NAS mount point
+          ansible.builtin.file:
+            path: "{{ _nas_tmp.path }}"
+            state: absent
+          when: _nas_tmp is defined
+          failed_when: false
+
+
+      tags: [deploy, smb]
+
+    # ─── Docker Prerequisites ──────────────────────────────────────────
+    - name: Ensure Docker is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+      tags: [deploy, docker]
+
+    - name: Check if traefik network exists
+      ansible.builtin.command: docker network inspect traefik
+      register: traefik
+      changed_when: false
+      failed_when: false
+      tags: [deploy, docker]
+
+    - name: Create traefik network
+      ansible.builtin.command: docker network create traefik
+      when: traefik.rc != 0
+      tags: [deploy, docker]
+
+    - name: Check NVIDIA Container Toolkit is available
+      ansible.builtin.command: nvidia-smi
+      register: nvidia_check
+      changed_when: false
+      failed_when: false
+      tags: [deploy, preflight]
+
+    - name: Warn if NVIDIA GPU is not available
+      ansible.builtin.debug:
+        msg: "WARNING: nvidia-smi not found - GPU services (ollama, comfyui, whishper) will fail to start"
+      when: nvidia_check.rc != 0
+      tags: [deploy, preflight]
+
+    # ─── Stack Deployment ──────────────────────────────────────────────
+    - name: Pull latest images
+      ansible.builtin.command:
+        # --ignore-pull-failures: continue if a registry is unreachable or an
+        # image is rate-limited / private. docker compose up -d will fall back
+        # to any locally cached image rather than aborting the deployment.
+        cmd: docker compose pull --ignore-pull-failures
+        chdir: "{{ aistack_base_dir }}"
+      register: pull_result
+      changed_when: "'Pull complete' in pull_result.stderr or 'Downloaded newer' in pull_result.stderr"
+      failed_when: false
+      tags: [deploy]
+
+    - name: Warn if any images failed to pull
+      ansible.builtin.debug:
+        msg: "WARNING: one or more images could not be pulled (rc={{ pull_result.rc }}). Deployment will use locally cached images where available."
+      when: pull_result.rc != 0
+      tags: [deploy]
+
+    - name: Deploy AI Stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --remove-orphans
+        chdir: "{{ aistack_base_dir }}"
+      register: deploy_result
+      changed_when: "'Started' in deploy_result.stderr or 'Creating' in deploy_result.stderr"
+      failed_when: false
+      tags: [deploy]
+
+    - name: Show docker compose up output
+      ansible.builtin.debug:
+        msg: "{{ (deploy_result.stderr_lines + deploy_result.stdout_lines) | select('match', '.+') | list }}"
+      tags: [deploy]
+
+    - name: Fail if docker compose up returned an error
+      ansible.builtin.fail:
+        msg: "docker compose up failed (rc={{ deploy_result.rc }}). See output above."
+      when: deploy_result.rc != 0
+      tags: [deploy]
+
+    - name: Check container states after deploy
+      ansible.builtin.command:
+        cmd: docker compose ps -a
+        chdir: "{{ aistack_base_dir }}"
+      register: compose_ps
+      changed_when: false
+      failed_when: false
+      tags: [deploy]
+
+    - name: Show container states
+      ansible.builtin.debug:
+        msg: "{{ compose_ps.stdout_lines }}"
+      tags: [deploy]
+
+    - name: Wait for services to become healthy
+      ansible.builtin.command:
+        cmd: docker compose ps --format json
+        chdir: "{{ aistack_base_dir }}"
+      register: compose_ps
+      changed_when: false
+      retries: 10
+      delay: 30
+      until: "'unhealthy' not in compose_ps.stdout"
+      tags: [deploy, health]
+
+    # ─── Langfuse Database Initialisation ─────────────────────────────
+    - name: Wait for postgres to be healthy before creating Langfuse database
+      ansible.builtin.shell:
+        # Use shell + single-quotes so the Go template {{...}} is never seen by
+        # Ansible's Jinja2 engine. The container name uses aistack_namespace.
+        cmd: >-
+          docker inspect
+          --format='{% raw %}{{.State.Health.Status}}{% endraw %}'
+          {{ aistack_namespace }}-postgres
+        executable: /bin/bash
+      register: postgres_health
+      retries: 20
+      delay: 10
+      until: postgres_health.stdout | trim == "healthy"
+      changed_when: false
+      tags: [deploy, langfuse]
+
+    - name: Create application PostgreSQL databases
+      ansible.builtin.shell:
+        # Use grep/cut to read POSTGRES_USER — avoids bash misinterpreting
+        # values with spaces when sourcing .env. Container name is namespaced.
+        cmd: |
+          ENV="{{ aistack_base_dir }}/.env"
+          _read() { grep "^${1}=" "$ENV" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/'; }
+          POSTGRES_USER=your_username
+          DB="{{ item.db }}"
+          docker exec {{ aistack_namespace }}-postgres psql -U "$POSTGRES_USER" -tc \
+            "SELECT 1 FROM pg_database WHERE datname = '$DB';" | grep -q 1 && \
+            echo "EXISTS" || \
+          ( docker exec {{ aistack_namespace }}-postgres psql -U "$POSTGRES_USER" \
+            -c "CREATE DATABASE $DB OWNER $POSTGRES_USER;" && echo "CREATED" )
+        executable: /bin/bash
+      register: _db_create
+      changed_when: "'CREATED' in _db_create.stdout"
+      loop:
+        - { db: langfuse, notify_handler: Restart langfuse }
+        - { db: n8n, notify_handler: Restart n8n }
+        - { db: grafana, notify_handler: Restart grafana }
+      notify: "{{ item.notify_handler }}"
+      tags: [deploy, databases]
+
+    # ─── Ollama Model Pulling ───────────────────────────────────────────
+    # Pulls INFERENCE_TEXT_MODEL from the .env into the Ollama volume.
+    # ollama pull is idempotent — it only downloads if the model is absent
+    # or a newer version exists. Large models can take 10-30+ minutes on
+    # first run; async + poll keeps Ansible from timing out the connection.
+    # If Ollama is not running (e.g. no GPU on this host) the task warns
+    # and continues — pull manually with:
+    #   docker exec <namespace>-ollama ollama pull <model>
+    - name: Read Ollama model list from env file
+      ansible.builtin.shell:
+        # OLLAMA_PULL_MODELS is a comma-separated list of models to pull.
+        # Falls back to INFERENCE_TEXT_MODEL if OLLAMA_PULL_MODELS is not set.
+        # Example .env entry:
+        #   OLLAMA_PULL_MODELS=llama3.1:8b,llava:13b,qwen2.5-coder:7b
+        cmd: |
+          ENV="{{ aistack_base_dir }}/.env"
+          _read() { grep "^${1}=" "$ENV" | head -1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/'; }
+          MODELS=$(_read OLLAMA_PULL_MODELS)
+          if [ -z "$MODELS" ]; then
+            MODELS=$(_read INFERENCE_TEXT_MODEL)
+          fi
+          echo "$MODELS"
+        executable: /bin/bash
+      register: _ollama_models_raw
+      changed_when: false
+      tags: [deploy, models]
+
+    - name: Pull Ollama models
+      ansible.builtin.shell:
+        cmd: |
+          MODEL="{{ item | trim }}"
+          if [ -z "$MODEL" ]; then exit 0; fi
+          echo "Pulling: $MODEL"
+          docker exec {{ aistack_namespace }}-ollama ollama pull "$MODEL"
+        executable: /bin/bash
+      loop: "{{ _ollama_models_raw.stdout | trim | split(',') }}"
+      when: _ollama_models_raw.stdout | trim | length > 0
+      register: ollama_pull
+      changed_when: false
+      failed_when: false
+      async: 3600
+      poll: 30
+      tags: [deploy, models]
+
+    - name: Warn if any model pull failed
+      ansible.builtin.debug:
+        msg: >
+          WARNING: Pull failed for '{{ item.item | trim }}' (rc={{ item.rc }}).
+          Ollama may not be running yet (no GPU, container still starting).
+          Pull manually: docker exec {{ aistack_namespace }}-ollama ollama pull {{ item.item | trim }}
+      loop: "{{ ollama_pull.results | default([]) }}"
+      when: item.rc is defined and item.rc != 0
+      tags: [deploy, models]
+
+    # ─── Final Status ──────────────────────────────────────────────────
+    - name: Display deployment status
+      ansible.builtin.command:
+        cmd: docker compose ps
+        chdir: "{{ aistack_base_dir }}"
+      register: stack_status
+      changed_when: false
+      tags: [deploy, health]
+
+    - name: Show stack status
+      ansible.builtin.debug:
+        var: stack_status.stdout_lines
+      tags: [deploy, health]
+
+  # ─── Handlers ──────────────────────────────────────────────────────
+  handlers:
+    - name: Restart searxng
+      ansible.builtin.command:
+        cmd: docker compose restart searxng
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart jaeger
+      ansible.builtin.command:
+        cmd: docker compose restart jaeger
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart otel-collector
+      ansible.builtin.command:
+        cmd: docker compose restart otel-collector
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart prometheus
+      ansible.builtin.command:
+        cmd: docker compose restart prometheus
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart grafana
+      ansible.builtin.command:
+        cmd: docker compose restart grafana
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart langfuse
+      ansible.builtin.command:
+        cmd: docker compose restart langfuse-web langfuse-worker
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]
+
+    - name: Restart n8n
+      ansible.builtin.command:
+        cmd: docker compose restart n8n
+        chdir: "{{ aistack_base_dir }}"
+      tags: [deploy]

@@ -1,0 +1,1312 @@
+services:
+  # Ollama - LLM inference server
+  ollama:
+    image: ollama/ollama:0.17.7
+    container_name: aistack-ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+          cpus: '8.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - OLLAMA_KEEP_ALIVE=1h
+      - OLLAMA_ORIGINS=https://ollama.${DOMAIN:-example.com},https://chat.${DOMAIN:-example.com},https://n8n.${DOMAIN:-example.com}
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=3
+      - OLLAMA_NUM_GPU=1
+      - OLLAMA_DEBUG=0
+      - CUDA_MODULE_LOADING=LAZY
+      - OLLAMA_FLASH_ATTENTION=1
+      - OLLAMA_KV_CACHE_TYPE=f16
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MODELS=/root/.ollama
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ollama.rule=Host(`ollama.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.ollama.entrypoints=websecure"
+      - "traefik.http.routers.ollama.tls=true"
+      - "traefik.http.routers.ollama.tls.certresolver=cloudflare"
+      - "traefik.http.services.ollama.loadbalancer.server.port=11434"
+      - "traefik.http.routers.ollama.middlewares=auth"
+      - "traefik.http.middlewares.auth.basicauth.users=${OLLAMA_API_CREDENTIALS}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - ollama_models:/root/.ollama
+
+  # Open WebUI with OpenTelemetry support
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:v0.8.10
+    container_name: aistack-open-webui
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - 'OLLAMA_BASE_URL=http://ollama:11434'
+      - ENABLE_RAG_WEB_SEARCH=True
+      - RAG_WEB_SEARCH_ENGINE=searxng
+      - RAG_WEB_SEARCH_RESULT_COUNT=5
+      - RAG_WEB_SEARCH_CONCURRENT_REQUESTS=10
+      - SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>
+      - ENABLE_OPENAI_API=true
+      - OPENAI_API_BASE_URL=http://ollama:11434/v1;http://pipelines:9099
+      - OPENAI_API_KEY=ollama;${PIPELINES_API_KEY:-0p3n-w3bu!}
+      - VECTOR_DB=qdrant
+      - QDRANT_URI=http://qdrant:6333
+      - TIKA_SERVER_URL=http://tika:9998
+      - WEBUI_NAME=AI Stack
+      - WEBUI_URL=https://chat.${DOMAIN:-example.com}
+      - ENABLE_SIGNUP=false
+      - DEFAULT_USER_ROLE=user
+      - ENABLE_IMAGE_GENERATION=true
+      - IMAGE_GENERATION_ENGINE=comfyui
+      - COMFYUI_BASE_URL=http://comfyui:8188
+      - AUDIO_STT_ENGINE=openai
+      - AUDIO_STT_OPENAI_API_BASE_URL=http://whishper:8080/v1
+      - ENABLE_COMMUNITY_SHARING=false
+      - TASK_MODEL=${INFERENCE_TEXT_MODEL:-llama3.1:8b}
+      - ENABLE_ADMIN_EXPORT=true
+      # OpenTelemetry
+      - ENABLE_OTEL=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=open-webui
+      - OTEL_TRACES_EXPORTER=otlp
+      # Langfuse - LLM observability (self-hosted, internal network)
+      - ENABLE_LANGFUSE_TRACING=true
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=http://langfuse-web:3000
+      - TERMINAL_SERVER_CONNECTIONS=[{"id":"aistack-terminal","url":"http://open-terminal:8000","key":"${OPEN_TERMINAL_API_KEY}","name":"AI Stack Terminal","auth_type":"bearer","config":{"access_grants":[]}}]
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - openwebui_data:/app/backend/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-webui.rule=Host(`chat.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.open-webui.entrypoints=websecure"
+      - "traefik.http.routers.open-webui.tls=true"
+      - "traefik.http.routers.open-webui.tls.certresolver=cloudflare"
+      - "traefik.http.services.open-webui.loadbalancer.server.port=8080"
+      - "kuma.openwebui.http.name=Open WebUI"
+      - "kuma.openwebui.http.url=https://chat.${DOMAIN:-example.com}/"
+      - "kuma.openwebui.http.interval=60"
+    depends_on:
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_started
+      tika:
+        condition: service_started
+      searxng:
+        condition: service_started
+      open-terminal:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+      langfuse-web:
+        condition: service_healthy
+      pipelines:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  # ComfyUI - Image generation
+  comfyui:
+    image: ghcr.io/ai-dock/comfyui:latest-cuda
+    container_name: aistack-comfyui
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8188/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - WEB_ENABLE_AUTH=false
+      - SERVERURL=https://comfyui.${DOMAIN:-example.com}
+      - DIRECT_ADDRESS=comfyui.${DOMAIN:-example.com}
+      - DIRECT_ADDRESS_GET_WAN=false
+      - CF_QUICK_TUNNELS=false
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+          cpus: '6.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - comfyui_data:/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.comfyui.rule=Host(`comfyui.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.comfyui.entrypoints=websecure"
+      - "traefik.http.routers.comfyui.tls=true"
+      - "traefik.http.routers.comfyui.tls.certresolver=cloudflare"
+      - "traefik.http.services.comfyui.loadbalancer.server.port=8188"
+      - "kuma.comfyui.http.name=ComfyUI"
+      - "kuma.comfyui.http.url=https://comfyui.${DOMAIN:-example.com}/"
+      - "kuma.comfyui.http.interval=60"
+
+  # Whishper - Whisper transcription service
+  whishper:
+    image: pluja/whishper:v3.1.4
+    container_name: aistack-whishper
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '4.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, compute, utility]
+    security_opt:
+      - no-new-privileges:true
+    dns:
+      - 192.168.10.250
+      - 192.168.10.251
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - WHISPER_MODELS=${WHISPER_MODELS:-tiny,small}
+      - WHISPER_MODELS_DIR=/app/models
+      - PUBLIC_INTERNAL_API_HOST=http://127.0.0.1:8080
+      - PUBLIC_API_HOST=
+      - PUBLIC_WHISHPER_PROFILE=cuda
+      - WHISHPER_DB_URI=mongodb://root:example@mongo:27017/whishper?authSource=admin
+      - LIBRETRANSLATE_HOST=
+    extra_hosts:
+      - "translate:127.0.0.1"
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - whishper_data:/app/data
+      - whishper_uploads:/app/uploads
+      - whishper_models:/app/models
+      - whishper_logs:/var/log/whishper
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whishper.rule=Host(`whishper.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.whishper.entrypoints=websecure"
+      - "traefik.http.routers.whishper.tls=true"
+      - "traefik.http.routers.whishper.tls.certresolver=cloudflare"
+      - "traefik.http.services.whishper.loadbalancer.server.port=80"
+      - "kuma.whishper.http.name=Whishper"
+      - "kuma.whishper.http.url=https://whishper.${DOMAIN:-example.com}/"
+      - "kuma.whishper.http.interval=60"
+
+  # MongoDB - Database for Whishper
+  mongo:
+    image: mongo:7
+    container_name: aistack-mongo
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=example
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - mongo_data:/data/db
+    labels:
+      - "traefik.enable=false"
+
+  # n8n - Workflow automation
+  n8n:
+    image: n8nio/n8n:2.11.0
+    container_name: aistack-n8n
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_USER_MANAGEMENT_JWT_SECRET=${N8N_USER_MANAGEMENT_JWT_SECRET}
+      - OLLAMA_HOST=ollama:11434
+      - WEBHOOK_URL=https://n8n.${DOMAIN:-example.com}
+      - N8N_HOST=n8n.${DOMAIN:-example.com}
+      - N8N_PROTOCOL=https
+      - N8N_PORT=5678
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - n8n_data:/home/node/.n8n
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
+      - "traefik.http.routers.n8n.tls.certresolver=cloudflare"
+      - "traefik.http.services.n8n.loadbalancer.server.port=5678"
+      - "kuma.n8n.http.name=n8n"
+      - "kuma.n8n.http.url=https://n8n.${DOMAIN:-example.com}/"
+      - "kuma.n8n.http.interval=60"
+    depends_on:
+      postgres:
+        condition: service_started
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_started
+
+  # PostgreSQL - Relational database
+  postgres:
+    image: postgres:16.13-alpine
+    container_name: aistack-postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - postgres_data:/var/lib/postgresql/data
+    labels:
+      - "traefik.enable=false"
+
+  # Qdrant - Vector database for RAG
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: aistack-qdrant
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/6333' || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__LOG_LEVEL=INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - qdrant_storage:/qdrant/storage
+    labels:
+      - "traefik.enable=false"
+
+  # Apache Tika - Document parsing for RAG
+  tika:
+    image: apache/tika:3.2.3.0
+    container_name: aistack-tika
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/localhost/9998' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  # SearxNG
+  searxng:
+    image: searxng/searxng:2026.2.23-4964d664f
+    container_name: aistack-searxng
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - SEARXNG_SECRET=${SEARXNG_SECRET}
+      - SEARXNG_BASE_URL=https://searxng.${DOMAIN:-example.com}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /opt/aistack/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.searxng.rule=Host(`searxng.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.searxng.entrypoints=websecure"
+      - "traefik.http.routers.searxng.tls=true"
+      - "traefik.http.routers.searxng.tls.certresolver=cloudflare"
+      - "traefik.http.services.searxng.loadbalancer.server.port=8080"
+
+  # Jaeger v2 - Distributed tracing backend (based on OpenTelemetry Collector)
+  jaeger:
+    image: jaegertracing/jaeger:2.15.0
+    container_name: aistack-jaeger
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - jaeger_data:/badger
+      - /opt/aistack/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jaeger.rule=Host(`jaeger.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.jaeger.entrypoints=websecure"
+      - "traefik.http.routers.jaeger.tls=true"
+      - "traefik.http.routers.jaeger.tls.certresolver=cloudflare"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+      - "kuma.jaeger.http.name=Jaeger"
+      - "kuma.jaeger.http.url=https://jaeger.${DOMAIN:-example.com}/"
+      - "kuma.jaeger.http.interval=60"
+
+  # OpenTelemetry Collector - Telemetry aggregation and routing
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: aistack-otel-collector
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:13133/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    command: ["--config=/etc/otel-collector/config.yaml"]
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /opt/aistack/otel-collector/config.yaml:/etc/otel-collector/config.yaml:ro
+    depends_on:
+      jaeger:
+        condition: service_started
+    labels:
+      - "traefik.enable=false"
+
+  # NVIDIA GPU Exporter - GPU metrics for Prometheus (via nvidia-smi)
+  nvidia-gpu-exporter:
+    image: utkuozdemir/nvidia_gpu_exporter:1.4.1
+    container_name: aistack-nvidia-gpu-exporter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility]
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    labels:
+      - "traefik.enable=false"
+
+  # Prometheus - Metrics collection and storage
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    container_name: aistack-prometheus
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:9090/-/healthy || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - /opt/aistack/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.routers.prometheus.tls.certresolver=cloudflare"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "kuma.aistackprometheus.http.name=AI Stack Prometheus"
+      - "kuma.aistackprometheus.http.url=https://prometheus.${DOMAIN:-example.com}/"
+      - "kuma.aistackprometheus.http.interval=60"
+
+  # Grafana - Visualization and dashboards
+  grafana:
+    image: grafana/grafana:12.4.0
+    container_name: aistack-grafana
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.${DOMAIN:-example.com}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - grafana_data:/var/lib/grafana
+      - /opt/aistack/grafana/provisioning:/etc/grafana/provisioning:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.routers.grafana.tls.certresolver=cloudflare"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "kuma.aistackgrafana.http.name=AI Stack Grafana"
+      - "kuma.aistackgrafana.http.url=https://grafana.${DOMAIN:-example.com}/"
+      - "kuma.aistackgrafana.http.interval=60"
+    depends_on:
+      prometheus:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  # Open WebUI Pipelines - Plugin/filter framework (hosts Langfuse filter pipeline)
+  pipelines:
+    image: ghcr.io/open-webui/pipelines:main
+    container_name: aistack-pipelines
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9099/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      # Auto-download Langfuse v3 filter pipeline on startup
+      - PIPELINES_URLS=https://raw.githubusercontent.com/open-webui/pipelines/refs/heads/main/examples/filters/langfuse_filter_pipeline.py
+      # Langfuse connection (internal network)
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_HOST=http://langfuse-web:3000
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - pipelines_data:/app/pipelines
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      langfuse-web:
+        condition: service_healthy
+
+  # SmarterRouter - Intelligent LLM routing
+  smarterrouter:
+    image: ghcr.io/peva3/smarterrouter:latest
+    container_name: aistack-smarterrouter
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - ROUTER_PROVIDER=ollama
+      - ROUTER_OLLAMA_URL=http://ollama:11434
+      - ROUTER_HOST=0.0.0.0
+      - ROUTER_PORT=11436
+      - ROUTER_EXTERNAL_MODEL_NAME=smarterrouter/main
+      - ROUTER_PREFER_SMALLER_MODELS=true
+      - ROUTER_PREFER_NEWER_MODELS=true
+      - ROUTER_TEMPERATURE=0.0
+      - ROUTER_MAX_TOKENS=50
+      - ROUTER_PROFILE_TIMEOUT=90
+      - ROUTER_GENERATION_TIMEOUT=120
+      - ROUTER_PROFILE_PROMPTS_PER_CATEGORY=3
+      - ROUTER_SIGNATURE_ENABLED=true
+      - "ROUTER_SIGNATURE_FORMAT=\nModel: {model}"
+      - ROUTER_CACHE_ENABLED=true
+      - ROUTER_CACHE_MAX_SIZE=500
+      - ROUTER_CACHE_TTL_SECONDS=3600
+      - ROUTER_DATABASE_URL=sqlite:////app/data/router.db
+      - ROUTER_POLLING_INTERVAL=60
+      - ROUTER_LOG_LEVEL=INFO
+      - ROUTER_LOG_FORMAT=text
+      - ROUTER_VRAM_MONITOR_ENABLED=true
+      - ROUTER_VRAM_AUTO_UNLOAD_ENABLED=true
+      - ROUTER_VRAM_UNLOAD_STRATEGY=lru
+      - ROUTER_BENCHMARK_SOURCES=huggingface,lmsys
+      - ROUTER_ADMIN_API_KEY=
+      - ROUTER_RATE_LIMIT_ENABLED=false
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - smarterrouter_data:/app/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smarterrouter.rule=Host(`smarterrouter.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.smarterrouter.entrypoints=websecure"
+      - "traefik.http.routers.smarterrouter.tls=true"
+      - "traefik.http.routers.smarterrouter.tls.certresolver=cloudflare"
+      - "traefik.http.services.smarterrouter.loadbalancer.server.port=11436"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11436/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      ollama:
+        condition: service_started
+
+  # MinIO - S3-compatible object storage for Langfuse event uploads
+  minio:
+    image: minio/minio:latest
+    container_name: aistack-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - minio_data:/data
+    labels:
+      - "traefik.enable=false"
+
+  # MinIO bucket init - creates the langfuse bucket on first run
+  minio-init:
+    image: minio/mc:latest
+    container_name: aistack-minio-init
+    entrypoint: |
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
+        sleep 2
+      done
+      mc mb --ignore-existing local/langfuse
+      echo 'Bucket created successfully'
+      "
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER:-minio}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    networks:
+      - aistack-internal
+    depends_on:
+      minio:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+
+  # Redis - In-memory data store for Langfuse job queues
+  redis:
+    image: redis:7-alpine
+    container_name: aistack-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - redis_data:/data
+    labels:
+      - "traefik.enable=false"
+
+  # ClickHouse - Analytics database for Langfuse trace storage
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.12
+    container_name: aistack-clickhouse
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8123/ping || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - clickhouse_data:/var/lib/clickhouse
+    labels:
+      - "traefik.enable=false"
+
+  # Langfuse Web - LLM observability platform (UI + API)
+  langfuse-web:
+    image: langfuse/langfuse:3
+    container_name: aistack-langfuse-web
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://127.0.0.1:3000/api/public/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - NODE_ENV=production
+      - NEXTAUTH_URL=${LANGFUSE_BASE_URL}
+      - NEXTAUTH_SECRET=${LANGFUSE_NEXTAUTH_SECRET}
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minio}
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
+      - LANGFUSE_TELEMETRY_ENABLED=false
+      - LANGFUSE_LOG_LEVEL=info
+      - PORT=3000
+      - HOSTNAME=0.0.0.0
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.langfuse.rule=Host(`langfuse.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.langfuse.entrypoints=websecure"
+      - "traefik.http.routers.langfuse.tls=true"
+      - "traefik.http.routers.langfuse.tls.certresolver=cloudflare"
+      - "traefik.http.services.langfuse.loadbalancer.server.port=3000"
+      - "kuma.langfuse.http.name=Langfuse"
+      - "kuma.langfuse.http.url=https://langfuse.${DOMAIN:-example.com}/api/public/health"
+      - "kuma.langfuse.http.interval=60"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # Langfuse Worker - Background trace processing and job queue
+  langfuse-worker:
+    image: langfuse/langfuse-worker:3
+    container_name: aistack-langfuse-worker
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'node' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - aistack-internal
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/langfuse
+      - CLICKHOUSE_MIGRATION_URL=clickhouse://clickhouse:9000
+      - CLICKHOUSE_URL=http://clickhouse:8123
+      - CLICKHOUSE_USER=clickhouse
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_CLUSTER_ENABLED=false
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - SALT=${LANGFUSE_SALT}
+      - ENCRYPTION_KEY=${LANGFUSE_ENCRYPTION_KEY}
+      - LANGFUSE_S3_EVENT_UPLOAD_BUCKET=langfuse
+      - LANGFUSE_S3_EVENT_UPLOAD_REGION=us-east-1
+      - LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=${MINIO_ROOT_USER:-minio}
+      - LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+      - LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT=http://minio:9000
+      - LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE=true
+      - LANGFUSE_S3_EVENT_UPLOAD_PREFIX=events/
+      - LANGFUSE_TELEMETRY_ENABLED=false
+      - LANGFUSE_LOG_LEVEL=info
+      - PORT=3030
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    labels:
+      - "traefik.enable=false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  # Open Terminal
+  open-terminal:
+    image: ghcr.io/open-webui/open-terminal:latest
+    container_name: aistack-open-terminal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+    networks:
+      - traefik
+      - aistack-internal
+    environment:
+      - OPEN_TERMINAL_API_KEY=${OPEN_TERMINAL_API_KEY}
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "3"
+        max-size: "10m"
+        tag: "{{.ImageName}}|{{.Name}}"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+      - open_terminal_data:/home/user
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.open-terminal.rule=Host(`terminal.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.open-terminal.entrypoints=websecure"
+      - "traefik.http.routers.open-terminal.tls=true"
+      - "traefik.http.routers.open-terminal.tls.certresolver=cloudflare"
+      - "traefik.http.services.open-terminal.loadbalancer.server.port=8000"
+      - "kuma.openterminal.http.name=Open Terminal"
+      - "kuma.openterminal.http.url=https://terminal.${DOMAIN:-example.com}/health"
+      - "kuma.openterminal.http.interval=60"
+
+networks:
+  traefik:
+    external: true
+  aistack-internal:
+    driver: bridge
+    internal: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  # Local model storage for Ollama (faster access)
+  ollama_models:
+  
+  # Open WebUI data - local volume (SQLite requires local filesystem)
+  openwebui_data:
+  
+  # ComfyUI data - local volume
+  comfyui_data:
+  
+  # Whishper data and models - local volumes
+  whishper_data:
+  whishper_uploads:
+  whishper_models:
+  whishper_logs:
+  
+  # Qdrant vector database storage
+  qdrant_storage:
+  
+  # PostgreSQL database storage
+  postgres_data:
+  
+  # MongoDB data for Whishper
+  mongo_data:
+
+  # n8n workflow data
+  n8n_data:
+  
+  # Open WebUI Pipelines data (persists downloaded pipeline scripts)
+  pipelines_data:
+
+  # SmarterRouter data
+  smarterrouter_data:
+
+  # Open Terminal data
+  open_terminal_data:
+
+  # Langfuse dependencies
+  redis_data:
+  clickhouse_data:
+  minio_data:
+
+  # Monitoring Data Volumes (SMB for persistence)
+  jaeger_data:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE:-aistack}/jaeger"
+  
+  prometheus_data:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE:-aistack}/prometheus"
+  
+  # Grafana data - local volume (SQLite requires local filesystem, not CIFS)
+  grafana_data:
+  
+  prometheus_config:
+    driver_opts:
+      type: cifs
+      o: "username=${SMB_USERNAME},password=${SMB_PASSWORD},vers=3.0,nodfs,file_mode=0777,dir_mode=0777"
+      device: "//${SMB_SERVER}/${SMB_SHARE}/${AISTACK_NAMESPACE:-aistack}/prometheus-config"
+  

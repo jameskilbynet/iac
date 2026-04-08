@@ -1,0 +1,20 @@
+all:
+  children:
+
+    production:
+      hosts:
+        docker-host:
+          ansible_host: uk-bhr-p-doc-1.example.com
+          ansible_user: w20kilja
+          ansible_become: true
+          aistack_namespace: "aistack"
+          aistack_env_file: ".env"
+
+    test:
+      hosts:
+        docker-host-test:
+          ansible_host: blogtest.example.com
+          ansible_user: w20kilja
+          ansible_become: true
+          aistack_namespace: "aistack-test"
+          aistack_env_file: ".env.test"

@@ -39,6 +39,7 @@ services:
       - "kuma.hoarder.http.name=Hoarder"
       - "kuma.hoarder.http.url=https://hoarder.example.com/"
       - "kuma.hoarder.http.interval=60"
+
     depends_on:
       - meilisearch
       - chrome
