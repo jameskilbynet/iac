@@ -1,0 +1,4 @@
+---
+include:
+  - compose/traefik.yml
+  - compose/nginx.yml
