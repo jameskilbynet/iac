@@ -130,6 +130,8 @@
         path: /vcf
         state: directory
         mode: "0755"
+        owner: "{{ lookup('env', 'SUDO_USER') | default('root', true) }}"
+        group: "{{ lookup('env', 'SUDO_USER') | default('root', true) }}"
 
     # ─── Compose Files ───────────────────────────────────
     - name: Copy docker-compose.yml
