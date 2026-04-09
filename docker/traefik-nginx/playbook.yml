@@ -226,6 +226,14 @@
           </body>
           </html>
 
+    # ─── Create Docker Network ────────────────────────────
+    - name: Create traefik Docker network
+      ansible.builtin.command:
+        cmd: docker network create traefik
+      register: network_create
+      changed_when: network_create.rc == 0
+      failed_when: network_create.rc != 0 and 'already exists' not in network_create.stderr
+
     # ─── Start Stack ─────────────────────────────────────
     - name: Start the stack
       ansible.builtin.command:
