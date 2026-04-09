@@ -57,6 +57,9 @@
         state: present
         update_cache: yes
 
+    # NOTE: allow_reboot defaults to false. If the VM has pending kernel
+    # updates, Docker may fail to install. Re-run with -e allow_reboot=true
+    # or reboot manually first.
     - name: Check if a reboot is required
       ansible.builtin.stat:
         path: /var/run/reboot-required
@@ -83,6 +86,8 @@
         mode: "0644"
         force: false
 
+    # TROUBLESHOOT: If this fails with "invalid packet", delete both
+    # {{ docker_gpg_path }} and {{ docker_gpg_armored_path }} then re-run.
     - name: Dearmor Docker GPG key
       ansible.builtin.command: gpg --dearmor -o {{ docker_gpg_path }} {{ docker_gpg_armored_path }}
       args:
@@ -111,6 +116,8 @@
         update_cache: yes
       notify: Start Docker service
 
+    # IMPORTANT: Docker must be running before compose files are deployed.
+    # If this step is removed, the "Start the stack" task will fail.
     - name: Flush handlers to ensure Docker is running
       ansible.builtin.meta: flush_handlers
 
@@ -126,6 +133,9 @@
         - "{{ install_dir }}/traefik"
         - "{{ install_dir }}/nginx"
 
+    # NOTE: Owned by SUDO_USER so the calling user can write files here
+    # without sudo. If SUDO_USER is unset (e.g. running as root directly),
+    # ownership falls back to root.
     - name: Create vcf directory
       ansible.builtin.file:
         path: /vcf
@@ -135,6 +145,10 @@
         group: "{{ lookup('env', 'SUDO_USER') | default('root', true) }}"
 
     # ─── Nginx Configuration ────────────────────────────
+    # TROUBLESHOOT: If nginx starts but Traefik ignores it, check the
+    # container healthcheck. Autoindex returns 200 for directory listings
+    # but some healthcheck methods may not handle this correctly.
+    # Verify with: docker exec nginx-web wget -q --spider http://localhost/
     - name: Create nginx config with directory browsing
       ansible.builtin.copy:
         dest: "{{ install_dir }}/nginx/default.conf"
@@ -196,6 +210,13 @@
             traefik:
               address: ":8080"
 
+          # TROUBLESHOOT: Certs not issuing?
+          #   1. Verify token: curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+          #        -H "Authorization: Bearer <token>"
+          #   2. Token needs: Zone:DNS:Edit + Zone:Zone:Read permissions
+          #   3. Check logs: docker logs traefik 2>&1 | grep -i acme
+          #   4. If stuck with staging cert, truncate acme.json and restart:
+          #      truncate -s 0 {{ install_dir }}/traefik/acme.json
           certificatesResolvers:
             cloudflare:
               acme:
@@ -251,6 +272,9 @@
           </html>
 
     # ─── Create Docker Network ────────────────────────────
+    # NOTE: The traefik network is declared as 'external: true' in the
+    # compose files, so it must exist before docker compose up. This task
+    # is idempotent -- safe to re-run if network already exists.
     - name: Create traefik Docker network
       ansible.builtin.command:
         cmd: docker network create traefik
@@ -259,6 +283,14 @@
       failed_when: network_create.rc != 0 and 'already exists' not in network_create.stderr
 
     # ─── Start Stack ─────────────────────────────────────
+    # TROUBLESHOOT: If containers start but Traefik doesn't discover them:
+    #   1. Check both containers are on the traefik network:
+    #      docker network inspect traefik | grep -E "Name|IPv4"
+    #   2. Check labels are present:
+    #      docker inspect nginx-web --format '{{json .Config.Labels}}'
+    #   3. Check Traefik can talk to Docker:
+    #      docker logs traefik 2>&1 | grep -i error
+    #   4. If API version mismatch, ensure traefik:latest is used (not v3.3/v3.4)
     - name: Start the stack
       ansible.builtin.command:
         cmd: docker compose up -d --remove-orphans

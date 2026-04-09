@@ -102,7 +102,7 @@ echo -e "${GREEN}═════════════════════
 echo -e "${GREEN}  Deployment Complete${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo ""
-echo "  Nginx:     https://${DOMAIN}"
+echo "  Nginx:     https://vcf.${DOMAIN}"
 echo "  Traefik:   https://traefik.${DOMAIN}"
 echo "  Web root:  /vcf"
 echo "  Stack dir: /opt/traefik-nginx"
