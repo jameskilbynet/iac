@@ -49,6 +49,19 @@ if [[ -z "$SUBDOMAIN" ]]; then
     exit 1
 fi
 
+read -rp "Enter the web server username: " WEB_USER
+if [[ -z "$WEB_USER" ]]; then
+    err "Username cannot be empty."
+    exit 1
+fi
+
+read -rsp "Enter the web server password: " WEB_PASS
+echo ""
+if [[ -z "$WEB_PASS" ]]; then
+    err "Password cannot be empty."
+    exit 1
+fi
+
 read -rp "Enter your Cloudflare API token: " CF_TOKEN
 if [[ -z "$CF_TOKEN" ]]; then
     err "Cloudflare API token cannot be empty."
@@ -58,6 +71,7 @@ fi
 echo ""
 info "Domain:     $DOMAIN"
 info "Web server: ${SUBDOMAIN}.${DOMAIN}"
+info "Auth user:  $WEB_USER"
 info "API Token:  ${CF_TOKEN:0:8}••••••••"
 echo ""
 read -rp "Proceed with deployment? [y/N] " CONFIRM
@@ -98,11 +112,18 @@ else
     ok "Ansible already installed."
 fi
 
+# ─── Generate Basic Auth Hash ────────────────────────
+info "Generating basic auth credentials..."
+# Generate APR1 hash and escape $ for docker compose ($ becomes $$)
+HTPASSWD_HASH=$(openssl passwd -apr1 "$WEB_PASS")
+HTPASSWD_ESCAPED="${WEB_USER}:$(echo "$HTPASSWD_HASH" | sed 's/\$/\$\$/g')"
+ok "Credentials generated."
+
 # ─── Run Playbook ────────────────────────────────────
 info "Running deployment playbook..."
 ansible-playbook \
     "${SCRIPT_DIR}/playbook.yml" \
-    --extra-vars "domain=${DOMAIN} subdomain=${SUBDOMAIN} cf_dns_api_token=${CF_TOKEN}"
+    --extra-vars "domain=${DOMAIN} subdomain=${SUBDOMAIN} cf_dns_api_token=${CF_TOKEN} basicauth_users=${HTPASSWD_ESCAPED}"
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
