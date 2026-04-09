@@ -4,7 +4,9 @@
 # Run on a vanilla Ubuntu VM:  sudo bash deploy.sh
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/jameskilbynet/iac.git"
+REPO_DIR="/tmp/iac"
+STACK_PATH="docker/traefik-nginx"
 
 # ─── Colours ─────────────────────────────────────────
 RED='\033[0;31m'
@@ -56,6 +58,26 @@ if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     info "Aborted."
     exit 0
 fi
+
+# ─── Install Git ─────────────────────────────────────
+if ! command -v git &>/dev/null; then
+    info "Installing git..."
+    apt-get update -qq
+    apt-get install -y -qq git
+    ok "Git installed."
+fi
+
+# ─── Clone Repository ───────────────────────────────
+if [[ -d "$REPO_DIR" ]]; then
+    info "Updating existing repo..."
+    git -C "$REPO_DIR" pull -q
+else
+    info "Cloning repository..."
+    git clone -q "$REPO_URL" "$REPO_DIR"
+fi
+ok "Repository ready."
+
+SCRIPT_DIR="${REPO_DIR}/${STACK_PATH}"
 
 # ─── Install Ansible ─────────────────────────────────
 if ! command -v ansible-playbook &>/dev/null; then
