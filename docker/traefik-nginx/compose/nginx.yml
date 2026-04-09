@@ -18,6 +18,8 @@ services:
       traefik.http.routers.nginx.tls.certresolver: cloudflare
       traefik.http.routers.nginx.tls.domains[0].main: "${DOMAIN}"
       traefik.http.routers.nginx.tls.domains[0].sans: "*.${DOMAIN}"
+      traefik.http.routers.nginx.middlewares: nginx-auth
+      traefik.http.middlewares.nginx-auth.basicauth.users: "VCF:$$apr1$$wWIc0Hz7$$pgUxfgeBdHbUNjSSZUccU0"
       traefik.http.services.nginx.loadbalancer.server.port: "80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost/ || exit 1"]
