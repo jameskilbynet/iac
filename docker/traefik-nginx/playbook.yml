@@ -29,8 +29,9 @@
       ansible.builtin.assert:
         that:
           - domain is defined and domain | length > 0
+          - subdomain is defined and subdomain | length > 0
           - cf_dns_api_token is defined and cf_dns_api_token | length > 0
-        fail_msg: "Both 'domain' and 'cf_dns_api_token' must be provided"
+        fail_msg: "'domain', 'subdomain' and 'cf_dns_api_token' must be provided"
 
     - name: Detect system architecture
       ansible.builtin.command: dpkg --print-architecture
@@ -252,6 +253,7 @@
         mode: "0600"
         content: |
           DOMAIN={{ domain }}
+          SUBDOMAIN={{ subdomain }}
           CF_DNS_API_TOKEN={{ cf_dns_api_token }}
           INSTALL_DIR={{ install_dir }}
 

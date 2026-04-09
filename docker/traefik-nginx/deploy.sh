@@ -43,6 +43,12 @@ if [[ -z "$DOMAIN" ]]; then
     exit 1
 fi
 
+read -rp "Enter the subdomain for the web server (e.g. vcf): " SUBDOMAIN
+if [[ -z "$SUBDOMAIN" ]]; then
+    err "Subdomain cannot be empty."
+    exit 1
+fi
+
 read -rp "Enter your Cloudflare API token: " CF_TOKEN
 if [[ -z "$CF_TOKEN" ]]; then
     err "Cloudflare API token cannot be empty."
@@ -51,6 +57,7 @@ fi
 
 echo ""
 info "Domain:     $DOMAIN"
+info "Web server: ${SUBDOMAIN}.${DOMAIN}"
 info "API Token:  ${CF_TOKEN:0:8}••••••••"
 echo ""
 read -rp "Proceed with deployment? [y/N] " CONFIRM
@@ -95,14 +102,14 @@ fi
 info "Running deployment playbook..."
 ansible-playbook \
     "${SCRIPT_DIR}/playbook.yml" \
-    --extra-vars "domain=${DOMAIN} cf_dns_api_token=${CF_TOKEN}"
+    --extra-vars "domain=${DOMAIN} subdomain=${SUBDOMAIN} cf_dns_api_token=${CF_TOKEN}"
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo -e "${GREEN}  Deployment Complete${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
 echo ""
-echo "  Nginx:     https://vcf.${DOMAIN}"
+echo "  Nginx:     https://${SUBDOMAIN}.${DOMAIN}"
 echo "  Traefik:   https://traefik.${DOMAIN}"
 echo "  Web root:  /vcf"
 echo "  Stack dir: /opt/traefik-nginx"
