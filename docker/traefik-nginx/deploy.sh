@@ -62,7 +62,8 @@ if [[ -z "$WEB_PASS" ]]; then
     exit 1
 fi
 
-read -rp "Enter your Cloudflare API token: " CF_TOKEN
+read -rsp "Enter your Cloudflare API token: " CF_TOKEN
+echo ""
 if [[ -z "$CF_TOKEN" ]]; then
     err "Cloudflare API token cannot be empty."
     exit 1
@@ -117,13 +118,32 @@ info "Generating basic auth credentials..."
 # Generate APR1 hash and escape $ for docker compose ($ becomes $$)
 HTPASSWD_HASH=$(openssl passwd -apr1 "$WEB_PASS")
 HTPASSWD_ESCAPED="${WEB_USER}:$(echo "$HTPASSWD_HASH" | sed 's/\$/\$\$/g')"
+# Clear the plaintext password from memory as soon as possible
+unset WEB_PASS
 ok "Credentials generated."
+
+# ─── Write Secrets to Temporary Vars File ────────────
+# Using a vars file (mode 0600) instead of --extra-vars keeps secrets
+# out of the process list where `ps aux` could otherwise reveal them.
+VARS_FILE=$(mktemp)
+chmod 600 "$VARS_FILE"
+trap 'rm -f "$VARS_FILE"' EXIT INT TERM
+
+cat > "$VARS_FILE" <<EOF
+domain: "${DOMAIN}"
+subdomain: "${SUBDOMAIN}"
+cf_dns_api_token: "${CF_TOKEN}"
+basicauth_users: "${HTPASSWD_ESCAPED}"
+EOF
+
+# Clear the plaintext token from the shell environment
+unset CF_TOKEN HTPASSWD_HASH HTPASSWD_ESCAPED
 
 # ─── Run Playbook ────────────────────────────────────
 info "Running deployment playbook..."
 ansible-playbook \
     "${SCRIPT_DIR}/playbook.yml" \
-    --extra-vars "domain=${DOMAIN} subdomain=${SUBDOMAIN} cf_dns_api_token=${CF_TOKEN} basicauth_users=${HTPASSWD_ESCAPED}"
+    --extra-vars "@${VARS_FILE}"
 
 echo ""
 echo -e "${GREEN}═══════════════════════════════════════════${NC}"
