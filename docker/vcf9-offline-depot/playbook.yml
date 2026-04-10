@@ -484,7 +484,6 @@
                 <ol class="steps">
                   <li>Drop your VCF installer bundles into <code>/vcf</code> on this host.</li>
                   <li>Point the VCF Installer at <code>https://{{ subdomain }}.{{ domain }}</code> as your offline depot URL.</li>
-                  <li>Remove or replace <code>/vcf/index.html</code> so Nginx serves the bundle directory listing at the root instead of this page.</li>
                 </ol>
               </section>
             </main>
