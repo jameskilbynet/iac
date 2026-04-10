@@ -30,6 +30,17 @@ if ! grep -qi 'ubuntu' /etc/os-release 2>/dev/null; then
     exit 1
 fi
 
+# ─── Disk Space Check ────────────────────────────────
+# VCF offline depot payloads are large; fail fast if the root filesystem
+# does not have enough free space for the download and extraction.
+MIN_DISK_GB=100
+AVAIL_GB=$(df -BG --output=avail / | tail -n1 | tr -dc '0-9')
+if [[ -z "$AVAIL_GB" ]] || (( AVAIL_GB < MIN_DISK_GB )); then
+    err "Insufficient disk space on /: ${AVAIL_GB:-unknown}GB available, ${MIN_DISK_GB}GB required."
+    exit 1
+fi
+ok "Disk space check passed (${AVAIL_GB}GB available on /)."
+
 # ─── Prompt for Configuration ────────────────────────
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
