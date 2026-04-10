@@ -1,11 +1,11 @@
 ---
-- name: Deploy Traefik + Nginx web stack
+- name: Deploy VCF9 Offline Depot
   hosts: localhost
   connection: local
   become: yes
 
   vars:
-    install_dir: /opt/traefik-nginx
+    install_dir: /opt/vcf9-offline-depot
     docker_gpg_path: /etc/apt/keyrings/docker.gpg
     docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
     docker_gpg_armored_path: /etc/apt/keyrings/docker.asc
@@ -271,7 +271,7 @@
           <head><title>{{ domain }}</title></head>
           <body>
             <h1>{{ domain }}</h1>
-            <p>Traefik + Nginx stack deployed successfully.</p>
+            <p>VCF9 Offline Depot deployed successfully.</p>
           </body>
           </html>
 

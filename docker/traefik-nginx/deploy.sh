@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ─── Traefik + Nginx Bootstrap ───────────────────────
+# ─── VCF9 Offline Depot Bootstrap ────────────────────
 # Installs Ansible, prompts for config, deploys the full stack.
 # Run on a vanilla Ubuntu VM:  sudo bash deploy.sh
 set -euo pipefail
@@ -44,7 +44,7 @@ ok "Disk space check passed (${AVAIL_GB}GB available on /)."
 # ─── Prompt for Configuration ────────────────────────
 echo ""
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
-echo -e "${CYAN}  Traefik + Nginx Deployment${NC}"
+echo -e "${CYAN}  VCF9 Offline Depot Deployment${NC}"
 echo -e "${CYAN}═══════════════════════════════════════════${NC}"
 echo ""
 
@@ -164,7 +164,7 @@ echo ""
 echo "  Nginx:     https://${SUBDOMAIN}.${DOMAIN}"
 echo "  Traefik:   https://traefik.${DOMAIN}"
 echo "  Web root:  /vcf"
-echo "  Stack dir: /opt/traefik-nginx"
+echo "  Stack dir: /opt/vcf9-offline-depot"
 echo ""
 echo "  DNS: Point *.${DOMAIN} to this server's IP."
 echo "  Certs will be issued automatically via Cloudflare DNS."
