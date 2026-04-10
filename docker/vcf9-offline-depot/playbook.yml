@@ -260,6 +260,9 @@
           INSTALL_DIR={{ install_dir }}
 
     # ─── Default Web Page ────────────────────────────────
+    # NOTE: force: false means this landing page is only written on first
+    # deploy. Remove /vcf/index.html (or replace it) once real depot content
+    # is in place so Nginx's autoindex serves the bundle directory listing.
     - name: Create default index.html if none exists
       ansible.builtin.copy:
         dest: /vcf/index.html
@@ -267,11 +270,231 @@
         force: false
         content: |
           <!DOCTYPE html>
-          <html>
-          <head><title>{{ domain }}</title></head>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="robots" content="noindex, nofollow">
+            <title>VCF9 Offline Depot — {{ subdomain }}.{{ domain }}</title>
+            <style>
+              :root {
+                --bg: #0b1220;
+                --bg-card: #111a2e;
+                --border: #1f2b44;
+                --text: #e6edf7;
+                --text-muted: #8b97ad;
+                --accent: #00a8ff;
+                --accent-soft: rgba(0, 168, 255, 0.12);
+                --success: #3fb950;
+                --success-soft: rgba(63, 185, 80, 0.12);
+              }
+              @media (prefers-color-scheme: light) {
+                :root {
+                  --bg: #f7f9fc;
+                  --bg-card: #ffffff;
+                  --border: #e3e8f0;
+                  --text: #0b1220;
+                  --text-muted: #5d6b82;
+                  --accent: #0070d1;
+                  --accent-soft: rgba(0, 112, 209, 0.08);
+                  --success: #1a7f37;
+                  --success-soft: rgba(26, 127, 55, 0.1);
+                }
+              }
+              * { box-sizing: border-box; }
+              html, body { margin: 0; padding: 0; }
+              body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                             "Helvetica Neue", Arial, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                line-height: 1.6;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                -webkit-font-smoothing: antialiased;
+              }
+              main {
+                flex: 1;
+                max-width: 860px;
+                margin: 0 auto;
+                padding: 4rem 1.5rem 3rem;
+                width: 100%;
+              }
+              header { margin-bottom: 2.5rem; }
+              .eyebrow {
+                font-size: 0.75rem;
+                font-weight: 600;
+                letter-spacing: 0.12em;
+                text-transform: uppercase;
+                color: var(--accent);
+                margin-bottom: 0.5rem;
+              }
+              h1 {
+                font-size: clamp(1.75rem, 5vw, 2.5rem);
+                font-weight: 700;
+                margin: 0 0 0.5rem 0;
+                letter-spacing: -0.02em;
+              }
+              .domain {
+                font-size: 1rem;
+                color: var(--text-muted);
+                font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+              }
+              .status {
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+                background: var(--success-soft);
+                color: var(--success);
+                padding: 0.4rem 0.85rem;
+                border-radius: 999px;
+                font-size: 0.8rem;
+                font-weight: 600;
+                margin-top: 1.25rem;
+              }
+              .status::before {
+                content: "";
+                width: 0.5rem;
+                height: 0.5rem;
+                border-radius: 50%;
+                background: var(--success);
+                animation: pulse 2s infinite;
+              }
+              @keyframes pulse {
+                0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55); }
+                70%  { box-shadow: 0 0 0 8px rgba(63, 185, 80, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+              }
+              .cards {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+                gap: 1rem;
+                margin-bottom: 2.5rem;
+              }
+              .card {
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 1.25rem;
+              }
+              .card-label {
+                font-size: 0.7rem;
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+                color: var(--text-muted);
+                margin-bottom: 0.5rem;
+                font-weight: 600;
+              }
+              .card-value {
+                font-size: 1rem;
+                font-weight: 600;
+                font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+                word-break: break-word;
+              }
+              section h2 {
+                font-size: 1.2rem;
+                margin: 0 0 1rem 0;
+                font-weight: 600;
+              }
+              ol.steps {
+                list-style: none;
+                counter-reset: step;
+                padding: 0;
+                margin: 0 0 2rem 0;
+              }
+              ol.steps li {
+                counter-increment: step;
+                position: relative;
+                padding: 1rem 1.25rem 1rem 3.5rem;
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                margin-bottom: 0.75rem;
+              }
+              ol.steps li::before {
+                content: counter(step);
+                position: absolute;
+                left: 1rem;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 1.75rem;
+                height: 1.75rem;
+                border-radius: 50%;
+                background: var(--accent-soft);
+                color: var(--accent);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                font-size: 0.85rem;
+              }
+              code {
+                background: var(--accent-soft);
+                color: var(--accent);
+                padding: 0.1rem 0.45rem;
+                border-radius: 4px;
+                font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+                font-size: 0.9em;
+              }
+              footer {
+                border-top: 1px solid var(--border);
+                padding: 1.5rem;
+                text-align: center;
+                color: var(--text-muted);
+                font-size: 0.85rem;
+              }
+              footer a {
+                color: var(--accent);
+                text-decoration: none;
+              }
+              footer a:hover { text-decoration: underline; }
+            </style>
+          </head>
           <body>
-            <h1>{{ domain }}</h1>
-            <p>VCF9 Offline Depot deployed successfully using @jameskilbynet deployment script</p>
+            <main>
+              <header>
+                <div class="eyebrow">VMware Cloud Foundation</div>
+                <h1>VCF9 Offline Depot</h1>
+                <div class="domain">{{ subdomain }}.{{ domain }}</div>
+                <div class="status">Deployed &amp; ready</div>
+              </header>
+
+              <div class="cards">
+                <div class="card">
+                  <div class="card-label">Endpoint</div>
+                  <div class="card-value">{{ subdomain }}.{{ domain }}</div>
+                </div>
+                <div class="card">
+                  <div class="card-label">TLS</div>
+                  <div class="card-value">Let's Encrypt</div>
+                </div>
+                <div class="card">
+                  <div class="card-label">Reverse Proxy</div>
+                  <div class="card-value">Traefik</div>
+                </div>
+                <div class="card">
+                  <div class="card-label">File Server</div>
+                  <div class="card-value">Nginx</div>
+                </div>
+              </div>
+
+              <section>
+                <h2>Next steps</h2>
+                <ol class="steps">
+                  <li>Drop your VCF installer bundles into <code>/vcf</code> on this host.</li>
+                  <li>Point the VCF Installer at <code>https://{{ subdomain }}.{{ domain }}</code> as your offline depot URL.</li>
+                  <li>Remove or replace <code>/vcf/index.html</code> so Nginx serves the bundle directory listing at the root instead of this page.</li>
+                </ol>
+              </section>
+            </main>
+
+            <footer>
+              Deployed from
+              <a href="https://github.com/jameskilbynet/iac/tree/main/docker/vcf9-offline-depot" rel="noopener">jameskilbynet/iac</a>
+              &middot;
+              built by <a href="https://wordpress.jameskilby.cloud" rel="noopener">@jameskilbynet</a>
+            </footer>
           </body>
           </html>
 
