@@ -6,7 +6,7 @@ set -euo pipefail
 
 REPO_URL="https://github.com/jameskilbynet/iac.git"
 REPO_DIR="/tmp/iac"
-STACK_PATH="docker/traefik-nginx"
+STACK_PATH="docker/vcf9-offline-depot"
 
 # ─── Colours ─────────────────────────────────────────
 RED='\033[0;31m'
