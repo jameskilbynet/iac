@@ -271,7 +271,7 @@
           <head><title>{{ domain }}</title></head>
           <body>
             <h1>{{ domain }}</h1>
-            <p>VCF9 Offline Depot deployed successfully.</p>
+            <p>VCF9 Offline Depot deployed successfully using @jameskilbynet deployment script</p>
           </body>
           </html>
 
