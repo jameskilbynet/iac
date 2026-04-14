@@ -12,6 +12,7 @@
   hosts: all
   become: true
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     aistack_base_dir: /opt/aistack
     aistack_user: "1000"
     aistack_group: "1000"

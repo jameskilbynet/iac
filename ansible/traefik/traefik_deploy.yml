@@ -5,6 +5,7 @@
   gather_facts: true
 
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     # Traefik container settings - override via inventory, group_vars, or --extra-vars
     traefik_image: "{{ traefik_docker_image | default('traefik:v3.6.2') }}"
     traefik_container_name: "{{ traefik_name | default('traefik') }}"

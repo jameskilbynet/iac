@@ -3,6 +3,7 @@
   hosts: all
   become: true
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     gomplate_version: "4.3.0"
     gomplate_arch: "linux-amd64"
   

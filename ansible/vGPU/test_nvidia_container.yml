@@ -2,6 +2,8 @@
   hosts: all
   gather_facts: false
   become: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
   tasks:
     # 1. Run nvidia-smi inside an Ubuntu container with NVIDIA runtime

@@ -2,6 +2,8 @@
 - name: Securely add NVIDIA Container Toolkit repository
   hosts: all
   become: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
     - name: Install required packages
       apt:

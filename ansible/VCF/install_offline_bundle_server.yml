@@ -2,6 +2,8 @@
 - name: Deploy Nginx in Docker Container with Host Path Mapping
   hosts: all
   become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
 
   tasks:
     - name: Ensure Nginx image is available (if not, it will be pulled)

@@ -3,6 +3,7 @@
   hosts: all
   become: yes
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     coral_gpg_path: /etc/apt/keyrings/coral-edgetpu.gpg
     coral_repo: "deb [signed-by={{ coral_gpg_path }}] https://packages.cloud.google.com/apt coral-edgetpu-stable main"
 
