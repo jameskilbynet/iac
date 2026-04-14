@@ -3,6 +3,7 @@
   hosts: all
   become: yes
   vars:
+    ansible_python_interpreter: /usr/bin/python3
     docker_gpg_path: /etc/apt/keyrings/docker.gpg
     docker_gpg_url: https://download.docker.com/linux/ubuntu/gpg
     docker_gpg_armored_path: /etc/apt/keyrings/docker.asc
