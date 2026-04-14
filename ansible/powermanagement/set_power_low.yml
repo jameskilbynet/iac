@@ -1,0 +1,29 @@
+---
+- name: Set vSphere host power management policy to Low Power
+  hosts: localhost
+  gather_facts: no
+  collections:
+    - community.vmware
+
+  vars:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_pass }}"
+    validate_certs: false
+    esxi_host: "{{ target_host }}"
+
+  tasks:
+    - name: Set power management policy to Low Power
+      community.vmware.vmware_host_powermgmt_policy:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+        esxi_hostname: "{{ esxi_host }}"
+        policy: low-power
+      register: power_result
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: "Power policy on {{ esxi_host }} set to Low Power"
+      when: power_result.changed
