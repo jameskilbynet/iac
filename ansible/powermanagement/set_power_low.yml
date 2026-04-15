@@ -20,7 +20,7 @@
         validate_certs: "{{ validate_certs }}"
         cluster_name: "{{ item }}"
         policy: low-power
-      loop: "{{ cluster_names }}"
+      loop: "{{ cluster_names if cluster_names is iterable and cluster_names is not string else [cluster_names] }}"
       register: power_results
 
     - name: Display results
