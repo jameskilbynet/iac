@@ -4,13 +4,28 @@
   gather_facts: no
   tasks:
     - name: Install community.vmware collection
-      ansible.builtin.shell: ansible-galaxy collection install community.vmware
+      ansible.builtin.shell: ansible-galaxy collection install community.vmware -p /tmp/collections
+
+    - name: Write extra vars file
+      ansible.builtin.copy:
+        content: |
+          vcenter_host: "{{ vcenter_host }}"
+          vcenter_user: "{{ vcenter_user }}"
+          vcenter_pass: "{{ vcenter_pass }}"
+        dest: /tmp/.powermgmt_vars.yml
+        mode: "0600"
 
     - name: Run Set Power Balanced playbook
       ansible.builtin.shell: >
+        ANSIBLE_COLLECTIONS_PATH=/tmp/collections
         ansible-playbook {{ playbook_dir }}/set_power_balanced.yml
-        -e '{"vcenter_host":"{{ vcenter_host }}","vcenter_user":"{{ vcenter_user }}","vcenter_pass":"{{ vcenter_pass }}"}'
+        -e @/tmp/.powermgmt_vars.yml
       register: playbook_result
+
+    - name: Clean up vars file
+      ansible.builtin.file:
+        path: /tmp/.powermgmt_vars.yml
+        state: absent
 
     - name: Show playbook output
       ansible.builtin.debug:
