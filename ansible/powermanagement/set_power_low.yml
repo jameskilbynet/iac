@@ -1,22 +1,38 @@
 ---
-- name: Install required collections
-  hosts: localhost
-  gather_facts: no
-  tasks:
-    - name: Install community.vmware collection
-      ansible.builtin.command:
-        cmd: ansible-galaxy collection install community.vmware -p "{{ playbook_dir }}/collections"
-      register: galaxy_result
-      changed_when: "'was installed successfully' in galaxy_result.stdout"
-
 - name: Set vSphere host power management policy to Low Power
   hosts: localhost
   gather_facts: no
+  collections:
+    - community.vmware
+
   vars:
     vcenter_hostname: "{{ vcenter_host }}"
     vcenter_username: "{{ vcenter_user }}"
     vcenter_password: "{{ vcenter_pass }}"
     validate_certs: false
+
   tasks:
-    - name: Apply Low Power policy to all hosts
-      ansible.builtin.include_tasks: tasks/set_power_low.yml
+    - name: Gather all ESXi hosts from vCenter
+      community.vmware.vmware_host_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: host_info
+
+    - name: Set power management policy to Low Power on all hosts
+      community.vmware.vmware_host_powermgmt_policy:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+        esxi_hostname: "{{ item }}"
+        policy: low-power
+      loop: "{{ host_info.hosts_info.keys() | list }}"
+      register: power_results
+
+    - name: Display results
+      ansible.builtin.debug:
+        msg: "Power policy on {{ item.item }} set to Low Power"
+      loop: "{{ power_results.results }}"
+      when: item.changed
