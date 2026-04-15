@@ -30,6 +30,7 @@
     - name: Run Set Power Balanced playbook
       ansible.builtin.shell: |
         export ANSIBLE_COLLECTIONS_PATH=/tmp/vmware_collections
+        export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false
         ansible-playbook {{ playbook_dir }}/set_power_balanced.yml -e @/tmp/.powermgmt_vars.yml 2>&1
       register: playbook_result
       ignore_errors: true
