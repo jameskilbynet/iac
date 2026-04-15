@@ -23,6 +23,7 @@ iac/
 │   ├── traefik/                # Traefik reverse proxy and Cloudflare integration
 │   ├── updates/                # System updates and maintenance
 │   ├── vault/                  # HashiCorp Vault secrets management
+│   ├── powermanagement/        # vSphere host power policy automation
 │   └── vGPU/                   # NVIDIA GPU drivers and container toolkit
 ├── terraform/                  # Infrastructure as Code
 │   ├── Infra/                  # vSphere infrastructure components
@@ -123,6 +124,7 @@ iac/
 
 #### Specialized Automation
 
+- **Power Management**: Automated ESXi host power policy switching (Low Power/Balanced) across vSphere clusters
 - **vGPU**: NVIDIA GPU drivers and container toolkit
 - **Traefik**: Reverse proxy and Cloudflare integration
 - **Holodeck**: VMware vSphere networking for test environments
