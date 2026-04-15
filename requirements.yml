@@ -1,4 +1,4 @@
 ---
 collections:
   - name: community.vmware
-    version: "==4.8.6"
+    version: "4.8.6"
