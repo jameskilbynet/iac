@@ -3,19 +3,19 @@
   hosts: localhost
   gather_facts: no
   tasks:
-    - name: Install collection and verify
+    - name: Install collection and patch compatibility
       ansible.builtin.shell: |
-        set -ex
         ansible-galaxy collection install community.vmware --force -p /tmp/vmware_collections 2>&1
-        echo "--- Collection directory contents ---"
-        ls -la /tmp/vmware_collections/ansible_collections/community/vmware/ 2>&1 || echo "Directory not found"
-        echo "--- Modules directory ---"
-        ls /tmp/vmware_collections/ansible_collections/community/vmware/plugins/modules/ 2>&1 || echo "Modules dir not found"
-      register: install_result
-
-    - name: Show install output
-      ansible.builtin.debug:
-        msg: "{{ install_result.stdout_lines }}"
+        MANIFEST="/tmp/vmware_collections/ansible_collections/community/vmware/MANIFEST.json"
+        if [ -f "$MANIFEST" ]; then
+          sed -i 's/"requires_ansible": ".*"/"requires_ansible": ">=2.15.0"/' "$MANIFEST"
+          echo "Patched MANIFEST.json requires_ansible constraint"
+        fi
+        META="/tmp/vmware_collections/ansible_collections/community/vmware/meta/runtime.yml"
+        if [ -f "$META" ]; then
+          sed -i 's/requires_ansible: .*/requires_ansible: ">=2.15.0"/' "$META"
+          echo "Patched meta/runtime.yml requires_ansible constraint"
+        fi
 
     - name: Write extra vars file
       ansible.builtin.copy:
