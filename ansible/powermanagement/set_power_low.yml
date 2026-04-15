@@ -18,10 +18,12 @@
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
-        cluster_name: "{{ cluster_name }}"
+        cluster_name: "{{ item }}"
         policy: low-power
-      register: power_result
+      loop: "{{ cluster_names }}"
+      register: power_results
 
-    - name: Display result
+    - name: Display results
       ansible.builtin.debug:
-        var: power_result
+        msg: "{{ item.item }}: {{ 'changed' if item.changed else 'ok' }}"
+      loop: "{{ power_results.results }}"
