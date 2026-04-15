@@ -10,20 +10,29 @@
     vcenter_username: "{{ vcenter_user }}"
     vcenter_password: "{{ vcenter_pass }}"
     validate_certs: false
-    esxi_host: "{{ target_host }}"
 
   tasks:
-    - name: Set power management policy to Balanced
+    - name: Gather all ESXi hosts from vCenter
+      community.vmware.vmware_host_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: host_info
+
+    - name: Set power management policy to Balanced on all hosts
       community.vmware.vmware_host_powermgmt_policy:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
-        esxi_hostname: "{{ esxi_host }}"
+        esxi_hostname: "{{ item }}"
         policy: balanced
-      register: power_result
+      loop: "{{ host_info.hosts_info.keys() | list }}"
+      register: power_results
 
-    - name: Display result
+    - name: Display results
       ansible.builtin.debug:
-        msg: "Power policy on {{ esxi_host }} set to Balanced"
-      when: power_result.changed
+        msg: "Power policy on {{ item.item }} set to Balanced"
+      loop: "{{ power_results.results }}"
+      when: item.changed
