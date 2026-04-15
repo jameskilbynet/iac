@@ -29,8 +29,16 @@
 
     - name: Run Set Power Low playbook
       ansible.builtin.shell: |
-        export ANSIBLE_COLLECTIONS_PATH=/tmp/vmware_collections
-        export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false
+        cat > /tmp/ansible_vmware.cfg << 'CFGEOF'
+        [defaults]
+        collections_path = /tmp/vmware_collections
+        collections_scan_sys_path = false
+        CFGEOF
+        export ANSIBLE_CONFIG=/tmp/ansible_vmware.cfg
+        ansible-config dump 2>&1 | head -20
+        echo "---"
+        ls /tmp/vmware_collections/ansible_collections/community/vmware/plugins/modules/vmware_host_info.py 2>&1 || echo "vmware_host_info.py NOT FOUND"
+        echo "---"
         ansible-playbook {{ playbook_dir }}/set_power_low.yml -e @/tmp/.powermgmt_vars.yml 2>&1
       register: playbook_result
       ignore_errors: true
