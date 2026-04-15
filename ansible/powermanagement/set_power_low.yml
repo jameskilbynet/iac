@@ -1,39 +1,38 @@
 ---
-- name: Debug collection environment
+- name: Set vSphere host power management policy to Low Power
   hosts: localhost
   gather_facts: no
+  collections:
+    - community.vmware
+
+  vars:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_pass }}"
+    validate_certs: false
+
   tasks:
-    - name: Show ANSIBLE_COLLECTIONS_PATH
+    - name: Gather all ESXi hosts from vCenter
+      community.vmware.vmware_host_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+      register: host_info
+
+    - name: Set power management policy to Low Power on all hosts
+      community.vmware.vmware_host_powermgmt_policy:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ validate_certs }}"
+        esxi_hostname: "{{ item }}"
+        policy: low-power
+      loop: "{{ host_info.hosts_info.keys() | list }}"
+      register: power_results
+
+    - name: Display results
       ansible.builtin.debug:
-        msg: "ANSIBLE_COLLECTIONS_PATH={{ lookup('env', 'ANSIBLE_COLLECTIONS_PATH') }}"
-
-    - name: Show HOME
-      ansible.builtin.debug:
-        msg: "HOME={{ lookup('env', 'HOME') }}"
-
-    - name: Check default collections directory
-      ansible.builtin.command: ls -la ~/.ansible/collections/ansible_collections/
-      register: default_dir
-      ignore_errors: true
-
-    - name: Show default collections directory
-      ansible.builtin.debug:
-        var: default_dir.stdout_lines
-
-    - name: Check project collections directory
-      ansible.builtin.command: find /tmp/semaphore -name "vmware" -type d 2>/dev/null
-      register: find_result
-      ignore_errors: true
-
-    - name: Show find results
-      ansible.builtin.debug:
-        var: find_result.stdout_lines
-
-    - name: Show ansible config
-      ansible.builtin.command: ansible-config dump | grep -i collection
-      register: config_result
-      ignore_errors: true
-
-    - name: Show config
-      ansible.builtin.debug:
-        var: config_result.stdout_lines
+        msg: "Power policy on {{ item.item }} set to Low Power"
+      loop: "{{ power_results.results }}"
+      when: item.changed

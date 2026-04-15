@@ -1,0 +1,17 @@
+---
+- name: Bootstrap and run power management playbook
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Install community.vmware collection
+      ansible.builtin.shell: ansible-galaxy collection install community.vmware
+
+    - name: Run Set Power Balanced playbook
+      ansible.builtin.shell: >
+        ansible-playbook {{ playbook_dir }}/set_power_balanced.yml
+        -e '{"vcenter_host":"{{ vcenter_host }}","vcenter_user":"{{ vcenter_user }}","vcenter_pass":"{{ vcenter_pass }}"}'
+      register: playbook_result
+
+    - name: Show playbook output
+      ansible.builtin.debug:
+        msg: "{{ playbook_result.stdout_lines }}"
