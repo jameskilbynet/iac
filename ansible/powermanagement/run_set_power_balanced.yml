@@ -9,12 +9,10 @@
         MANIFEST="/tmp/vmware_collections/ansible_collections/community/vmware/MANIFEST.json"
         if [ -f "$MANIFEST" ]; then
           sed -i 's/"requires_ansible": ".*"/"requires_ansible": ">=2.15.0"/' "$MANIFEST"
-          echo "Patched MANIFEST.json requires_ansible constraint"
         fi
         META="/tmp/vmware_collections/ansible_collections/community/vmware/meta/runtime.yml"
         if [ -f "$META" ]; then
           sed -i 's/requires_ansible: .*/requires_ansible: ">=2.15.0"/' "$META"
-          echo "Patched meta/runtime.yml requires_ansible constraint"
         fi
 
     - name: Write extra vars file
@@ -23,22 +21,29 @@
           vcenter_host: "{{ vcenter_host }}"
           vcenter_user: "{{ vcenter_user }}"
           vcenter_pass: "{{ vcenter_pass }}"
+          cluster_name: "{{ cluster_name }}"
         dest: /tmp/.powermgmt_vars.yml
         mode: "0600"
       no_log: true
 
     - name: Run Set Power Balanced playbook
       ansible.builtin.shell: |
-        export ANSIBLE_COLLECTIONS_PATH=/tmp/vmware_collections
-        export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false
+        cat > /tmp/ansible_vmware.cfg << 'EOF'
+        [defaults]
+        collections_path = /tmp/vmware_collections
+        collections_scan_sys_path = false
+        EOF
+        export ANSIBLE_CONFIG=/tmp/ansible_vmware.cfg
         ansible-playbook {{ playbook_dir }}/set_power_balanced.yml -e @/tmp/.powermgmt_vars.yml 2>&1
       register: playbook_result
-      ignore_errors: true
 
-    - name: Clean up vars file
+    - name: Clean up temp files
       ansible.builtin.file:
-        path: /tmp/.powermgmt_vars.yml
+        path: "{{ item }}"
         state: absent
+      loop:
+        - /tmp/.powermgmt_vars.yml
+        - /tmp/ansible_vmware.cfg
 
     - name: Show playbook output
       ansible.builtin.debug:

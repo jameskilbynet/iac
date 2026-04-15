@@ -12,27 +12,16 @@
     validate_certs: false
 
   tasks:
-    - name: Gather all ESXi hosts from vCenter
-      community.vmware.vmware_host_info:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: "{{ validate_certs }}"
-      register: host_info
-
-    - name: Set power management policy to Low Power on all hosts
+    - name: Set power management policy to Low Power on all hosts in cluster
       community.vmware.vmware_host_powermgmt_policy:
         hostname: "{{ vcenter_hostname }}"
         username: "{{ vcenter_username }}"
         password: "{{ vcenter_password }}"
         validate_certs: "{{ validate_certs }}"
-        esxi_hostname: "{{ item }}"
+        cluster_name: "{{ cluster_name }}"
         policy: low-power
-      loop: "{{ host_info.hosts_info.keys() | list }}"
-      register: power_results
+      register: power_result
 
-    - name: Display results
+    - name: Display result
       ansible.builtin.debug:
-        msg: "Power policy on {{ item.item }} set to Low Power"
-      loop: "{{ power_results.results }}"
-      when: item.changed
+        var: power_result
