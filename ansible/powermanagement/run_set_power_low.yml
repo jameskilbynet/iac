@@ -3,6 +3,11 @@
   hosts: localhost
   gather_facts: no
   tasks:
+    - name: Install PyVmomi Python library
+      ansible.builtin.pip:
+        name: PyVmomi
+        state: present
+
     - name: Install collection and patch compatibility
       ansible.builtin.shell: |
         ansible-galaxy collection install community.vmware --force -p /tmp/vmware_collections 2>&1
