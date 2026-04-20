@@ -1,17 +1,15 @@
 # Cloudflare WARP Connector — Ansible Playbook
 
-Deploys the Cloudflare WARP Connector on an Ubuntu VM, registers it with your Zero Trust organisation, and configures IP forwarding so all devices on your homelab subnet are reachable.
+Installs the Cloudflare WARP Connector on the **host it runs on**, registers it with your Zero Trust organisation, and configures IP forwarding so all devices on your homelab subnet are reachable.
+
+The playbook runs locally (`connection: local`) — no SSH, no inventory targeting. The Semaphore runner / VM you execute this from **becomes** the WARP connector.
 
 ## Structure
 
 ```
 warp-connector/
-├── deploy.yml                          # Main playbook
-├── inventory.ini                       # Host inventory
-├── group_vars/
-│   └── warp_connector/
-│       ├── vars.yml                    # Non-sensitive vars
-│       └── vault.yml                  # Encrypted token (ansible-vault)
+├── deploy.yml                          # Main playbook (localhost)
+├── inventory.ini                       # Minimal localhost inventory
 └── roles/
     └── warp_connector/
         ├── defaults/main.yml
@@ -21,37 +19,42 @@ warp-connector/
 
 ## Prerequisites
 
-- Ansible 2.12+
-- Ubuntu 22.04 or 24.04 target VM
-- SSH access to the VM
+- Ansible 2.15+ installed on the target host
+- Ubuntu 22.04 or 24.04
+- `sudo` rights for the executing user (`become: true`)
 
-## Setup
+## Variables
 
-### 1. Get your connector token
+| Variable | Description |
+|----------|-------------|
+| `warp_connector_token` | Token from Zero Trust → Networks → WARP Connector (mark as **secret**) |
+
+## Get your connector token
 
 In the [Zero Trust dashboard](https://one.dash.cloudflare.com):
 1. Go to **Networks → WARP Connector**
 2. Select **Create connector**, give it a name
 3. Copy the token shown on the next screen
 
-### 2. Configure inventory
+## Usage
 
-Edit `inventory.ini` and replace `192.168.1.X` with your VM's IP address.
+### With Semaphore
 
-### 3. Store the token in vault
+Run Semaphore (or a Semaphore runner) on the VM you want to become the connector.
+
+1. Create a **Variable Group** with `warp_connector_token` (mark as secret)
+2. Create an **Inventory** of type **File** pointing at `inventory.ini` (or create a static inventory containing `localhost ansible_connection=local`)
+3. Create a **Task Template** with:
+   - Playbook: `ansible/warp-connector/deploy.yml`
+   - Inventory + Variable Group from above
+   - No SSH key needed (runs locally)
+4. Run the task
+
+### Command Line (on the target host)
 
 ```bash
-# Edit vault.yml and paste in your token
-nano group_vars/warp_connector/vault.yml
-
-# Then encrypt it
-ansible-vault encrypt group_vars/warp_connector/vault.yml
-```
-
-### 4. Run the playbook
-
-```bash
-ansible-playbook -i inventory.ini deploy.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy.yml \
+  -e "warp_connector_token=YOUR_TOKEN"
 ```
 
 ## After deployment

@@ -2,29 +2,30 @@
 # ---------------------------------------------------------------------------
 # Cloudflare WARP Connector — deploy playbook
 #
-# Usage:
-#   ansible-playbook -i inventory.ini deploy.yml --ask-vault-pass
+# Runs locally on the target host (the WARP connector VM itself). The
+# Semaphore worker / runner must be the host you want to turn into a
+# connector — no SSH inventory needed.
 #
-# First run (token setup):
-#   1. Go to Zero Trust dashboard → Networks → WARP Connector → Create connector
-#   2. Copy the token shown in the dashboard
-#   3. Paste it into group_vars/warp_connector/vault.yml
-#   4. Encrypt it:  ansible-vault encrypt group_vars/warp_connector/vault.yml
-#   5. Run this playbook
+# Variables (pass via Semaphore Variable Group or -e on CLI):
+#   warp_connector_token   Token from Zero Trust → Networks → WARP Connector
+#                          (mark as secret in Semaphore)
 # ---------------------------------------------------------------------------
 
 - name: Deploy Cloudflare WARP Connector
-  hosts: warp_connector
+  hosts: localhost
+  connection: local
   become: true
   gather_facts: true
 
   pre_tasks:
     - name: Verify token is set
       ansible.builtin.assert:
-        that: warp_connector_token != "PASTE_YOUR_TOKEN_HERE"
+        that:
+          - warp_connector_token is defined
+          - warp_connector_token | length > 0
         fail_msg: >
-          You must set vault_warp_connector_token in
-          group_vars/warp_connector/vault.yml before running this playbook.
+          warp_connector_token is not set. Pass it via Semaphore Variable Group
+          (marked secret) or with -e warp_connector_token=...
 
     - name: Verify Ubuntu is the target OS
       ansible.builtin.assert:

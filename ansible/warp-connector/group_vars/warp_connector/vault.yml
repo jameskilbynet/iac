@@ -1,6 +1,0 @@
-# ---------------------------------------------------------------------------
-# Encrypt this file with:  ansible-vault encrypt group_vars/warp_connector/vault.yml
-# Edit later with:         ansible-vault edit group_vars/warp_connector/vault.yml
-# ---------------------------------------------------------------------------
-
-vault_warp_connector_token: "PASTE_YOUR_TOKEN_HERE"
