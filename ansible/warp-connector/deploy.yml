@@ -2,7 +2,8 @@
 # ---------------------------------------------------------------------------
 # Cloudflare WARP Connector — deploy playbook
 #
-# Runs against the host(s) in the [warp_connector] group in inventory.ini.
+# Runs against every host in the Semaphore inventory (hosts: all).
+# Limit via Semaphore's "Limit" field if the inventory has more than one host.
 #
 # Variables (pass via Semaphore Variable Group or -e on CLI):
 #   warp_connector_token   Token from Zero Trust → Networks → WARP Connector
@@ -10,7 +11,7 @@
 # ---------------------------------------------------------------------------
 
 - name: Deploy Cloudflare WARP Connector
-  hosts: warp_connector
+  hosts: all
   become: true
   gather_facts: true
 

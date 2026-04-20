@@ -41,15 +41,12 @@ In the [Zero Trust dashboard](https://one.dash.cloudflare.com):
 
 **2. Inventory** — create a **Static** inventory named `warp-connector`:
 ```ini
-[warp_connector]
-warp-connector-01 ansible_host=192.168.4.107
-
-[warp_connector:vars]
-ansible_user=ubuntu
-ansible_python_interpreter=/usr/bin/python3
+warp-connector-01 ansible_host=192.168.4.107 ansible_user=ubuntu ansible_python_interpreter=/usr/bin/python3
 ```
 - **User Credentials:** the SSH key from step 1
 - **Sudo Credentials:** None (passwordless sudo) or a password credential
+
+The playbook uses `hosts: all`, so any host in this inventory will be targeted.
 
 **3. Variable Group** — create `warp-connector-vars`:
 - Extra Variables (JSON):
