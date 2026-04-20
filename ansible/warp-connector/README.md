@@ -1,15 +1,14 @@
 # Cloudflare WARP Connector — Ansible Playbook
 
-Installs the Cloudflare WARP Connector on the **host it runs on**, registers it with your Zero Trust organisation, and configures IP forwarding so all devices on your homelab subnet are reachable.
+Deploys the Cloudflare WARP Connector on an Ubuntu VM, registers it with your Zero Trust organisation, and configures IP forwarding so all devices on your homelab subnet are reachable.
 
-The playbook runs locally (`connection: local`) — no SSH, no inventory targeting. The Semaphore runner / VM you execute this from **becomes** the WARP connector.
+Inventory is managed entirely in Semaphore — the repo contains no `inventory.ini`.
 
 ## Structure
 
 ```
 warp-connector/
-├── deploy.yml                          # Main playbook (localhost)
-├── inventory.ini                       # Minimal localhost inventory
+├── deploy.yml                          # Main playbook
 └── roles/
     └── warp_connector/
         ├── defaults/main.yml
@@ -19,9 +18,9 @@ warp-connector/
 
 ## Prerequisites
 
-- Ansible 2.15+ installed on the target host
-- Ubuntu 22.04 or 24.04
-- `sudo` rights for the executing user (`become: true`)
+- Semaphore with Ansible 2.15+
+- Ubuntu 22.04 or 24.04 on the target VM
+- SSH access from the Semaphore runner to the target with passwordless `sudo`
 
 ## Variables
 
@@ -36,26 +35,35 @@ In the [Zero Trust dashboard](https://one.dash.cloudflare.com):
 2. Select **Create connector**, give it a name
 3. Copy the token shown on the next screen
 
-## Usage
+## Semaphore setup
 
-### With Semaphore
+**1. Key Store** — add the SSH private key that can log in as `ubuntu@<target-ip>`.
 
-Run Semaphore (or a Semaphore runner) on the VM you want to become the connector.
+**2. Inventory** — create a **Static** inventory named `warp-connector`:
+```ini
+[warp_connector]
+warp-connector-01 ansible_host=192.168.4.107
 
-1. Create a **Variable Group** with `warp_connector_token` (mark as secret)
-2. Create an **Inventory** of type **File** pointing at `inventory.ini` (or create a static inventory containing `localhost ansible_connection=local`)
-3. Create a **Task Template** with:
-   - Playbook: `ansible/warp-connector/deploy.yml`
-   - Inventory + Variable Group from above
-   - No SSH key needed (runs locally)
-4. Run the task
-
-### Command Line (on the target host)
-
-```bash
-ansible-playbook -i inventory.ini deploy.yml \
-  -e "warp_connector_token=YOUR_TOKEN"
+[warp_connector:vars]
+ansible_user=ubuntu
+ansible_python_interpreter=/usr/bin/python3
 ```
+- **User Credentials:** the SSH key from step 1
+- **Sudo Credentials:** None (passwordless sudo) or a password credential
+
+**3. Variable Group** — create `warp-connector-vars`:
+- Extra Variables (JSON):
+  ```json
+  { "warp_connector_token": "" }
+  ```
+- Add `warp_connector_token` as a **secret** with the real token value.
+
+**4. Task Template** — `Deploy WARP Connector`:
+- Playbook: `ansible/warp-connector/deploy.yml`
+- Inventory: `warp-connector`
+- Environment: `warp-connector-vars`
+
+**5. Run.**
 
 ## After deployment
 

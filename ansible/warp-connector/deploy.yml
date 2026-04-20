@@ -2,9 +2,7 @@
 # ---------------------------------------------------------------------------
 # Cloudflare WARP Connector — deploy playbook
 #
-# Runs locally on the target host (the WARP connector VM itself). The
-# Semaphore worker / runner must be the host you want to turn into a
-# connector — no SSH inventory needed.
+# Runs against the host(s) in the [warp_connector] group in inventory.ini.
 #
 # Variables (pass via Semaphore Variable Group or -e on CLI):
 #   warp_connector_token   Token from Zero Trust → Networks → WARP Connector
@@ -12,8 +10,7 @@
 # ---------------------------------------------------------------------------
 
 - name: Deploy Cloudflare WARP Connector
-  hosts: localhost
-  connection: local
+  hosts: warp_connector
   become: true
   gather_facts: true
 
