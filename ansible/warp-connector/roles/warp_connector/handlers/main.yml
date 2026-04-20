@@ -1,0 +1,5 @@
+---
+- name: Restart warp-svc
+  ansible.builtin.systemd:
+    name: warp-svc
+    state: restarted

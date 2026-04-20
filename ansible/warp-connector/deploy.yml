@@ -1,0 +1,35 @@
+---
+# ---------------------------------------------------------------------------
+# Cloudflare WARP Connector — deploy playbook
+#
+# Usage:
+#   ansible-playbook -i inventory.ini deploy.yml --ask-vault-pass
+#
+# First run (token setup):
+#   1. Go to Zero Trust dashboard → Networks → WARP Connector → Create connector
+#   2. Copy the token shown in the dashboard
+#   3. Paste it into group_vars/warp_connector/vault.yml
+#   4. Encrypt it:  ansible-vault encrypt group_vars/warp_connector/vault.yml
+#   5. Run this playbook
+# ---------------------------------------------------------------------------
+
+- name: Deploy Cloudflare WARP Connector
+  hosts: warp_connector
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Verify token is set
+      ansible.builtin.assert:
+        that: warp_connector_token != "PASTE_YOUR_TOKEN_HERE"
+        fail_msg: >
+          You must set vault_warp_connector_token in
+          group_vars/warp_connector/vault.yml before running this playbook.
+
+    - name: Verify Ubuntu is the target OS
+      ansible.builtin.assert:
+        that: ansible_distribution == "Ubuntu"
+        fail_msg: "This playbook targets Ubuntu. Found: {{ ansible_distribution }}"
+
+  roles:
+    - warp_connector

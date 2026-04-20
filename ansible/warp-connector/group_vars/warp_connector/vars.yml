@@ -1,0 +1,10 @@
+# ---------------------------------------------------------------------------
+# Cloudflare WARP Connector — group vars
+# ---------------------------------------------------------------------------
+# Get your connector token from:
+#   Zero Trust dashboard → Networks → WARP Connector → Create connector
+#
+# Store the token in vault.yml (encrypted), NOT here.
+# Reference it as: warp_connector_token: "{{ vault_warp_connector_token }}"
+
+warp_connector_token: "{{ vault_warp_connector_token }}"

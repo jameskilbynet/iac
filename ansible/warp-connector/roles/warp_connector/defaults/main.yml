@@ -1,0 +1,9 @@
+# ---------------------------------------------------------------------------
+# Role defaults — override in group_vars or host_vars as needed
+# ---------------------------------------------------------------------------
+
+# Cloudflare package repo GPG key destination
+warp_gpg_keyring: /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
+
+# Enable IPv4 forwarding so the connector can route traffic for the whole subnet
+warp_ip_forward: true
