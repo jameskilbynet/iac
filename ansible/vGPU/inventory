@@ -4,10 +4,18 @@ all:
     vgpu_hosts:
       hosts:
         blogtest5:
-          ansible_host: 192.168.4.3
+          ansible_host: blogtest.jameskilby.cloud
       vars:
         ansible_user: w20kilja
         ansible_become: true
         ansible_become_method: sudo
         ansible_python_interpreter: /usr/bin/python3
+        ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+    esxi_hosts:
+      hosts:
+        uk-bhr-p-esx-a.jameskilby.cloud:
+      vars:
+        ansible_user: root
+        ansible_python_interpreter: /bin/python
+        ansible_remote_tmp: /tmp/.ansible
         ansible_ssh_private_key_file: ~/.ssh/id_ed25519

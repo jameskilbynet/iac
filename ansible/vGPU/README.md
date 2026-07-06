@@ -4,12 +4,13 @@ This directory contains Ansible playbooks for installing and configuring NVIDIA 
 
 ## Overview
 
-Four playbooks work together to set up and validate NVIDIA vGPU capabilities:
+Five playbooks work together to set up and validate NVIDIA vGPU capabilities:
 
-1. **install_nvidia_drivers.yml** - Installs NVIDIA vGPU drivers and licensing
-2. **install_nvidia_containertoolkit.yml** - Installs NVIDIA Container Toolkit for Docker GPU support
-3. **test_nvidia_container.yml** - Tests GPU access in Docker containers
-4. **validate_nvidia_vGPU.yml** - Validates vGPU licensing and driver status
+1. **install_nvidia_esxi_host_driver.yml** - Installs the NVIDIA vGPU host driver (VIB) on ESXi hosts
+2. **install_nvidia_drivers.yml** - Installs NVIDIA vGPU drivers and licensing (guest VMs)
+3. **install_nvidia_containertoolkit.yml** - Installs NVIDIA Container Toolkit for Docker GPU support
+4. **test_nvidia_container.yml** - Tests GPU access in Docker containers
+5. **validate_nvidia_vGPU.yml** - Validates vGPU licensing and driver status
 
 ## Prerequisites
 
@@ -19,6 +20,67 @@ Four playbooks work together to set up and validate NVIDIA vGPU capabilities:
   - NVIDIA vGPU driver file: `NVIDIA-Linux-x86_64-535.247.01-grid.run`
   - License token file: `client_configuration_token_04-08-2025-16-54-19.tok`
 - Docker installed on target hosts (for container toolkit playbook)
+
+## Playbook 0: install_nvidia_esxi_host_driver.yml
+
+### Purpose
+
+Installs the NVIDIA vGPU host driver (VIB bundle) directly on ESXi hosts from an NFS datastore already mounted on the host. This is the host-side component that must be in place before guest VMs can be assigned vGPU profiles.
+
+### Prerequisites
+
+- SSH enabled on the ESXi host (`TSM-SSH` service) and root SSH access
+- Your public key added to the host (ESXi does not use `~/.ssh/authorized_keys`):
+  ```bash
+  ssh root@<esxi-host> 'cat >> /etc/ssh/keys-root/authorized_keys' < ~/.ssh/id_ed25519.pub
+  ```
+  Alternatively run the playbook with `--ask-pass` (requires `sshpass`)
+- The driver bundle zip present on an NFS datastore mounted on the host (default: `/vmfs/volumes/ISO/nvidia/`)
+- No running VMs on the host — it must enter maintenance mode and will reboot
+
+### What It Does
+
+1. Checks whether the target driver version is already installed (idempotent)
+2. Verifies the driver bundle exists on the datastore
+3. Aborts if any VMs are still running on the host
+4. Enters maintenance mode
+5. Installs the VIB (`esxcli software vib install -d ...`), or updates it if an older NVIDIA VIB is present
+6. Reboots the host if the install reports a reboot is required, and waits for it to return
+7. Exits maintenance mode (only if the playbook put the host into it)
+8. Verifies the VIB is present and the GPU is visible via `nvidia-smi` on the host
+
+Hosts are processed one at a time (`serial: 1`) so a cluster is never fully drained.
+
+### Variables
+
+Override via inventory or `--extra-vars`:
+
+```yaml
+nvidia_esxi_driver_bundle: NVD-VGPU-800_595.71.03-1OEM.800.1.0.20613240.zip
+nvidia_esxi_datastore: ISO            # datastore name under /vmfs/volumes/
+nvidia_esxi_datastore_dir: nvidia/NVIDIA-GRID-vSphere-8-3/Host_Drivers  # subdirectory on the datastore ('' for none)
+nvidia_esxi_driver_version: ""        # defaults to version parsed from the bundle filename
+nvidia_esxi_maintenance_timeout: 300
+nvidia_esxi_reboot_timeout: 1800
+```
+
+The defaults install `NVD-VGPU-800_595.71.03` from `/vmfs/volumes/ISO/nvidia/NVIDIA-GRID-vSphere-8-3/Host_Drivers/`. When a new driver version lands on the datastore, override `nvidia_esxi_driver_bundle` (and `nvidia_esxi_datastore_dir` if the folder changes) or update the defaults in the playbook.
+
+### Usage
+
+```bash
+ansible-playbook -i inventory install_nvidia_esxi_host_driver.yml
+
+# Single host
+ansible-playbook -i inventory install_nvidia_esxi_host_driver.yml \
+  --limit uk-bhr-p-esx-a.jameskilby.cloud
+
+# Different driver bundle
+ansible-playbook -i inventory install_nvidia_esxi_host_driver.yml \
+  --extra-vars "nvidia_esxi_driver_bundle=<bundle>.zip"
+```
+
+If installation fails, the host is deliberately left in maintenance mode for safe inspection.
 
 ## Playbook 1: install_nvidia_drivers.yml
 

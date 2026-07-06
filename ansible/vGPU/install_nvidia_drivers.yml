@@ -63,16 +63,30 @@
           - nfs_export_path | length > 0
           - nfs_mount_point | length > 0
 
-    - name: Check if NVIDIA driver is already installed
-      ansible.builtin.command: nvidia-smi
-      register: nvidia_smi_check
+    - name: Derive target driver version from installer filename
+      ansible.builtin.set_fact:
+        nvidia_target_version: "{{ nvidia_driver_file | regex_search('[0-9]+\\.[0-9]+\\.[0-9]+') }}"
+
+    - name: Check installed NVIDIA driver version
+      ansible.builtin.command: modinfo -F version nvidia
+      register: nvidia_version_check
       changed_when: false
       failed_when: false
 
-    - name: Report existing driver
+    - name: Set installed driver version fact
+      ansible.builtin.set_fact:
+        nvidia_installed_version: "{{ nvidia_version_check.stdout | trim if nvidia_version_check.rc == 0 else '' }}"
+
+    - name: Report driver status
       ansible.builtin.debug:
-        msg: "NVIDIA driver is already installed. Skipping installation."
-      when: nvidia_smi_check.rc == 0
+        msg: >-
+          {% if nvidia_installed_version == nvidia_target_version %}
+          NVIDIA driver {{ nvidia_target_version }} is already installed. Skipping installation.
+          {% elif nvidia_installed_version | length > 0 %}
+          NVIDIA driver {{ nvidia_installed_version }} is installed but target is {{ nvidia_target_version }}. Upgrading.
+          {% else %}
+          No NVIDIA driver installed. Installing {{ nvidia_target_version }}.
+          {% endif %}
 
     - name: Install NVIDIA vGPU driver
       block:
@@ -83,16 +97,90 @@
             mode: '0755'
             remote_src: true
 
+        - name: Stop NVIDIA services before upgrade
+          ansible.builtin.systemd:
+            name: "{{ item }}"
+            state: stopped
+          loop:
+            - nvidia-gridd
+            - nvidia-persistenced
+          failed_when: false
+          when: nvidia_installed_version | length > 0
+
+        - name: Kill processes holding the GPU
+          ansible.builtin.shell: fuser -k /dev/nvidia* 2>/dev/null || true
+          when: nvidia_installed_version | length > 0
+
+        - name: Unload NVIDIA kernel modules before upgrade
+          ansible.builtin.shell: modprobe -r nvidia_drm nvidia_modeset nvidia_uvm nvidia
+          register: nvidia_unload
+          failed_when: false
+          when: nvidia_installed_version | length > 0
+
+        - name: Reboot to release NVIDIA modules
+          ansible.builtin.reboot:
+            reboot_timeout: 600
+            msg: "Rebooting to release in-use NVIDIA kernel modules before upgrade"
+          when: nvidia_installed_version | length > 0 and nvidia_unload.rc != 0
+
+        - name: Unload NVIDIA kernel modules after reboot
+          ansible.builtin.shell: |
+            systemctl stop nvidia-gridd nvidia-persistenced 2>/dev/null || true
+            fuser -k /dev/nvidia* 2>/dev/null || true
+            modprobe -r nvidia_drm nvidia_modeset nvidia_uvm nvidia 2>/dev/null || true
+          when: nvidia_installed_version | length > 0 and nvidia_unload.rc != 0
+
+        - name: Verify NVIDIA modules are unloaded
+          ansible.builtin.shell: "! lsmod | grep -q '^nvidia '"
+          changed_when: false
+          when: nvidia_installed_version | length > 0
+
         - name: Run NVIDIA vGPU driver installer
-          ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check"
-          args:
-            creates: /usr/bin/nvidia-smi
+          ansible.builtin.shell: "{{ nvidia_driver_path }} --silent --no-cc-version-check --dkms"
+          register: nvidia_installer
+
+        - name: Reboot after driver upgrade
+          ansible.builtin.reboot:
+            reboot_timeout: 600
+            msg: "Rebooting to complete NVIDIA driver upgrade to {{ nvidia_target_version }}"
+          when: nvidia_installed_version | length > 0
+
+        # The reboot may boot a newer staged kernel than the one the DKMS
+        # build ran against - rebuild for the running kernel if needed
+        - name: Ensure DKMS module is built for the running kernel
+          ansible.builtin.shell: |
+            set -e
+            KVER=$(uname -r)
+            if ! modinfo -F version nvidia >/dev/null 2>&1; then
+              apt-get install -y "linux-headers-${KVER}"
+              dkms autoinstall -k "${KVER}"
+            fi
+            modprobe nvidia
+          environment:
+            DEBIAN_FRONTEND: noninteractive
+          when: nvidia_installed_version | length > 0
+
+        - name: Verify installed driver matches target version
+          ansible.builtin.command: modinfo -F version nvidia
+          register: nvidia_post_install_version
+          changed_when: false
+          failed_when: nvidia_post_install_version.stdout | trim != nvidia_target_version
 
       rescue:
+        - name: Fetch nvidia-installer log tail
+          ansible.builtin.shell: tail -30 /var/log/nvidia-installer.log
+          register: installer_log
+          failed_when: false
+          changed_when: false
+
         - name: Display driver installation failure
           ansible.builtin.debug:
             msg: |
               NVIDIA driver installation failed.
+
+              Installer log:
+              {{ installer_log.stdout | default('Unable to read /var/log/nvidia-installer.log') }}
+
               Verify:
               - Driver file exists at {{ nfs_mount_point }}/{{ nvidia_driver_file }}
               - Kernel headers are installed for {{ ansible_kernel }}
@@ -101,7 +189,7 @@
         - name: Fail with driver installation error
           ansible.builtin.fail:
             msg: "NVIDIA vGPU driver installation failed. Check output above."
-      when: nvidia_smi_check.rc != 0
+      when: nvidia_installed_version != nvidia_target_version
 
     - name: Configure NVIDIA licensing
       block:
