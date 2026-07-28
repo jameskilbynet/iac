@@ -18,7 +18,7 @@ Five playbooks work together to set up and validate NVIDIA vGPU capabilities:
 - Ansible control node with SSH access to target hosts
 - NFS share accessible at `nas.jameskilby.cloud:/mnt/pool1/ISO/nvidia` containing:
   - NVIDIA vGPU driver file: `NVIDIA-Linux-x86_64-535.247.01-grid.run`
-  - License token file: `client_configuration_token_04-08-2025-16-54-19.tok`
+  - License token file: `client_configuration_token_01-16-2026-11-35-14.tok`
 - Docker installed on target hosts (for container toolkit playbook)
 
 ## Playbook 0: install_nvidia_esxi_host_driver.yml
@@ -104,7 +104,7 @@ You can override these in your inventory or via `--extra-vars`:
 
 ```yaml
 nvidia_driver_file: NVIDIA-Linux-x86_64-535.247.01-grid.run
-nvidia_licence_file: client_configuration_token_04-08-2025-16-54-19.tok
+nvidia_licence_file: client_configuration_token_01-16-2026-11-35-14.tok
 nfs_server: nas.jameskilby.cloud
 nfs_export_path: /mnt/pool1/ISO/nvidia
 nfs_mount_point: /mnt/iso/nvidia
