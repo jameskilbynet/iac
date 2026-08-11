@@ -31,14 +31,31 @@
 
     # Upload auth. Browsing and downloads stay anonymous so SDDC Manager can pull
     # bundles; PUT and DELETE go through a Traefik basic-auth middleware.
-    # Provide either vcf_upload_password_hash (htpasswd -nB, hash part only)
-    # or vcf_upload_password (hashed here, needs passlib on the controller).
+    #
+    # Supply the credential either way round, as an Ansible variable or as an
+    # environment variable on the controller. Semaphore variable groups put
+    # "Extra variables" in the first bucket and "Environment variables" (and
+    # secrets of that type) in the second, so both are accepted here:
+    #
+    #   vcf_upload_password_hash  or  VCF_UPLOAD_PASSWORD_HASH   (htpasswd -nB, hash only)
+    #   vcf_upload_password       or  VCF_UPLOAD_PASSWORD        (plaintext, needs passlib)
+    #
     vcf_upload_auth: "{{ vcf_upload_auth_enabled | default(true) | bool }}"
-    vcf_upload_username: "{{ vcf_upload_user | default('vcf') }}"
+    vcf_upload_username: >-
+      {{ vcf_upload_user | default(lookup('env', 'VCF_UPLOAD_USER'), true)
+         | default('vcf', true) }}
+    _vcf_hash_given: >-
+      {{ vcf_upload_password_hash
+         | default(lookup('env', 'VCF_UPLOAD_PASSWORD_HASH'), true)
+         | default('', true) | trim }}
+    _vcf_pass_given: >-
+      {{ vcf_upload_password
+         | default(lookup('env', 'VCF_UPLOAD_PASSWORD'), true)
+         | default('', true) | trim }}
     vcf_upload_hash: >-
-      {{ vcf_upload_password_hash | default(
-           (vcf_upload_password | password_hash('bcrypt'))
-           if (vcf_upload_password is defined) else '') }}
+      {{ _vcf_hash_given if _vcf_hash_given | length > 0
+         else (_vcf_pass_given | password_hash('bcrypt')
+               if _vcf_pass_given | length > 0 else '') }}
 
     vcf_nginx_config: |
       server {
@@ -150,10 +167,16 @@
         that:
           - vcf_upload_hash | trim | length > 0
         fail_msg: >-
-          Upload auth is enabled but no password was supplied. Set
-          vcf_upload_password_hash (generate with `htpasswd -nB {{ vcf_upload_username }}`
-          and keep only the part after the colon), or set vcf_upload_password,
-          or set vcf_upload_auth_enabled=false to leave uploads open.
+          Upload auth is enabled but no credential reached this play.
+          Seen: vcf_upload_password_hash={{ vcf_upload_password_hash is defined }},
+          VCF_UPLOAD_PASSWORD_HASH={{ (lookup('env', 'VCF_UPLOAD_PASSWORD_HASH') | length > 0) }},
+          vcf_upload_password={{ vcf_upload_password is defined }},
+          VCF_UPLOAD_PASSWORD={{ (lookup('env', 'VCF_UPLOAD_PASSWORD') | length > 0) }}.
+          If all four are false the value never left Semaphore: a variable group's
+          "Environment variables" and "Extra variables" are different buckets, and
+          the group must be attached to this template. Generate the hash with
+          `htpasswd -nB {{ vcf_upload_username }}` and keep only the part after the
+          colon. Or set vcf_upload_auth_enabled=false to leave uploads open.
         quiet: true
       when: vcf_upload_auth
 

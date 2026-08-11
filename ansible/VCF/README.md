@@ -66,11 +66,30 @@ vcf_upload_user: vcf
 vcf_upload_password_hash: "$2y$05$EXAMPLEHASHREPLACEMEwithYourOwnHtpasswdOutputXXXXXXXX"
 ```
 
+Either name works, as an Ansible variable or as a controller environment variable:
+
+| Ansible variable | Environment variable |
+|------------------|----------------------|
+| `vcf_upload_password_hash` | `VCF_UPLOAD_PASSWORD_HASH` |
+| `vcf_upload_password` | `VCF_UPLOAD_PASSWORD` |
+| `vcf_upload_user` | `VCF_UPLOAD_USER` |
+
 ### 3. Run the Playbook
 
 ```bash
 ansible-playbook -i inventory.ini -e @vars.yml install_offline_bundle_server.yml
 ```
+
+#### Running from Semaphore
+
+A variable group has two separate buckets and they do not reach Ansible the same way:
+
+- **Extra variables** → passed as `--extra-vars`, so use the `vcf_upload_password_hash` spelling.
+- **Environment variables** (and secrets of that type) → exported into the process environment, where Ansible does **not** see them as variables. Use the `VCF_UPLOAD_PASSWORD_HASH` spelling instead.
+
+The playbook reads both, so either bucket works — but the name has to match the bucket, and the variable group must be attached to the template. If the credential check fails, its message lists which of the four sources it actually found.
+
+A bcrypt hash contains `$`. Paste it into Semaphore as a plain value; do not wrap it in a shell command or double quotes in a script, or `$2y` and `$05` get expanded away.
 
 ### 4. Upload VCF Bundles
 
