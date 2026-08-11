@@ -1,62 +1,252 @@
 ---
-- name: Deploy Nginx in Docker Container with Host Path Mapping
+- name: Deploy VCF Offline Bundle Server (Nginx + drag-and-drop upload page)
   hosts: all
-  become: yes
+  become: true
+  gather_facts: false
+
   vars:
     ansible_python_interpreter: /usr/bin/python3
 
+    # Container / image
+    vcf_image: "{{ vcf_nginx_image | default('nginx:latest') }}"
+    vcf_container_name: "{{ vcf_name | default('VCF_Offline_Bundle_Server') }}"
+    vcf_network: "{{ vcf_docker_network | default('traefik') }}"
+
+    # Paths
+    vcf_host_root: "{{ vcf_bundle_path | default('/vcf') }}"
+    vcf_host_tmp: "{{ vcf_host_root }}/.upload-tmp"
+    vcf_config_dir: "{{ vcf_config_path | default('/etc/vcf-bundle-server') }}"
+    vcf_ui_dir: "{{ vcf_config_dir }}/ui"
+    vcf_container_root: /srv/vcf
+    vcf_container_ui: /usr/share/nginx/ui
+
+    # The nginx worker runs as uid/gid 101 in the official image and needs to
+    # write into the bundle directory for uploads to land.
+    vcf_nginx_uid: "{{ vcf_worker_uid | default(101) }}"
+    vcf_nginx_gid: "{{ vcf_worker_gid | default(101) }}"
+
+    # Routing
+    vcf_domain: "{{ vcf_hostname | default('vcf.jameskilby.cloud') }}"
+    vcf_cert_resolver: "{{ vcf_certresolver | default('cloudflare') }}"
+
+    # Upload auth. Browsing and downloads stay anonymous so SDDC Manager can pull
+    # bundles; PUT and DELETE go through a Traefik basic-auth middleware.
+    # Provide either vcf_upload_password_hash (htpasswd -nB, hash part only)
+    # or vcf_upload_password (hashed here, needs passlib on the controller).
+    vcf_upload_auth: "{{ vcf_upload_auth_enabled | default(true) | bool }}"
+    vcf_upload_username: "{{ vcf_upload_user | default('vcf') }}"
+    vcf_upload_hash: >-
+      {{ vcf_upload_password_hash | default(
+           (vcf_upload_password | password_hash('bcrypt'))
+           if (vcf_upload_password is defined) else '') }}
+
+    vcf_nginx_config: |
+      server {
+          listen 80 default_server;
+          server_name _;
+          charset utf-8;
+          server_tokens off;
+          root {{ vcf_container_root }};
+
+          # Bundles are tens of gigabytes; nginx must not cap the request body.
+          client_max_body_size 0;
+          client_body_timeout 600s;
+          send_timeout 600s;
+
+          access_log /var/log/nginx/access.log;
+          error_log  /var/log/nginx/error.log warn;
+
+          # Upload page. Served from a read-only mount so it never appears in
+          # the bundle listing and cannot be overwritten through the upload API.
+          location = / {
+              root {{ vcf_container_ui }};
+              try_files /index.html =404;
+              add_header Cache-Control "no-cache" always;
+          }
+
+          # Hidden files, including the upload temp directory, are never exposed.
+          location ~ /\. {
+              deny all;
+              return 404;
+          }
+
+          # Directory listing as JSON, consumed by the upload page.
+          location /api/files/ {
+              alias {{ vcf_container_root }}/;
+              autoindex on;
+              autoindex_format json;
+              autoindex_exact_size on;
+              autoindex_localtime off;
+              add_header Cache-Control "no-store" always;
+              limit_except GET HEAD { deny all; }
+          }
+
+          # Write endpoint. Traefik gates this with basic auth before it gets here.
+          location /api/upload/ {
+              alias {{ vcf_container_root }}/;
+              limit_except PUT DELETE { deny all; }
+              dav_methods PUT DELETE;
+              dav_access user:rw group:rw all:r;
+              create_full_put_path on;
+              # Same filesystem as the destination, so a finished upload is a
+              # rename rather than a second full-size copy.
+              client_body_temp_path {{ vcf_container_root }}/.upload-tmp;
+              client_max_body_size 0;
+          }
+
+          # Bundle downloads, e.g. https://{{ vcf_domain }}/VMware-...-bundle.zip
+          location / {
+              autoindex off;
+              limit_except GET HEAD { deny all; }
+          }
+      }
+
+    vcf_base_labels:
+      deployment.environment: "{{ inventory_hostname }}_nginx"
+      owner_team: it-support
+      com.example.version: 2.0.0
+      com.example.description: VCF Offline Bundle Server
+      description: "VCF offline bundle server serving {{ vcf_host_root }} on {{ inventory_hostname }}"
+      # Traefik
+      traefik.enable: "true"
+      traefik.http.services.vcf.loadbalancer.server.port: "80"
+      # Browse / download (anonymous)
+      traefik.http.routers.vcf.rule: "Host(`{{ vcf_domain }}`)"
+      traefik.http.routers.vcf.entrypoints: "websecure"
+      traefik.http.routers.vcf.tls: "true"
+      traefik.http.routers.vcf.tls.certresolver: "{{ vcf_cert_resolver }}"
+      traefik.http.routers.vcf.service: "vcf"
+      traefik.http.routers.vcf.priority: "10"
+      # HTTP router with redirect
+      traefik.http.routers.vcf-http.rule: "Host(`{{ vcf_domain }}`)"
+      traefik.http.routers.vcf-http.entrypoints: "web"
+      traefik.http.routers.vcf-http.middlewares: "redirect-to-https"
+      traefik.http.routers.vcf-http.service: "vcf"
+      traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: "https"
+
+    # Higher priority than the browse router, so uploads and deletes are the only
+    # requests that hit basic auth.
+    vcf_auth_labels:
+      traefik.http.routers.vcf-write.rule: "Host(`{{ vcf_domain }}`) && (Method(`PUT`) || Method(`DELETE`))"
+      traefik.http.routers.vcf-write.entrypoints: "websecure"
+      traefik.http.routers.vcf-write.tls: "true"
+      traefik.http.routers.vcf-write.tls.certresolver: "{{ vcf_cert_resolver }}"
+      traefik.http.routers.vcf-write.service: "vcf"
+      traefik.http.routers.vcf-write.priority: "100"
+      traefik.http.routers.vcf-write.middlewares: "vcf-auth"
+      traefik.http.middlewares.vcf-auth.basicauth.users: "{{ vcf_upload_username }}:{{ vcf_upload_hash | trim }}"
+      traefik.http.middlewares.vcf-auth.basicauth.removeheader: "true"
+
+  handlers:
+    - name: Restart VCF Offline Bundle Server
+      community.docker.docker_container:
+        name: "{{ vcf_container_name }}"
+        state: started
+        restart: true
+
   tasks:
-    - name: Ensure Nginx image is available (if not, it will be pulled)
+    - name: Fail early when upload auth is enabled without credentials
+      ansible.builtin.assert:
+        that:
+          - vcf_upload_hash | trim | length > 0
+        fail_msg: >-
+          Upload auth is enabled but no password was supplied. Set
+          vcf_upload_password_hash (generate with `htpasswd -nB {{ vcf_upload_username }}`
+          and keep only the part after the colon), or set vcf_upload_password,
+          or set vcf_upload_auth_enabled=false to leave uploads open.
+        quiet: true
+      when: vcf_upload_auth
+
+    - name: Ensure the nginx image is available
       community.docker.docker_image:
-        name: nginx:latest
+        name: "{{ vcf_image }}"
         source: pull
 
-    - name: Create VCF Offline Bundle Server directory
+    - name: Read the nginx build flags
+      ansible.builtin.command:
+        cmd: "docker run --rm {{ vcf_image }} nginx -V"
+      register: vcf_nginx_build
+      changed_when: false
+
+    - name: Fail when the nginx image cannot accept uploads
+      ansible.builtin.assert:
+        that:
+          - "'http_dav_module' in (vcf_nginx_build.stderr ~ vcf_nginx_build.stdout)"
+        fail_msg: >-
+          {{ vcf_image }} was not built with --with-http_dav_module, so it cannot
+          serve the upload endpoint. Use an image that includes WebDAV support.
+        quiet: true
+
+    - name: Create the bundle directory
       ansible.builtin.file:
-        path: /vcf/
+        path: "{{ vcf_host_root }}"
+        state: directory
+        owner: "{{ vcf_nginx_uid }}"
+        group: "{{ vcf_nginx_gid }}"
+        mode: '0755'
+
+    - name: Create the upload temp directory
+      ansible.builtin.file:
+        path: "{{ vcf_host_tmp }}"
+        state: directory
+        owner: "{{ vcf_nginx_uid }}"
+        group: "{{ vcf_nginx_gid }}"
+        mode: '0700'
+
+    - name: Create the config and UI directories
+      ansible.builtin.file:
+        path: "{{ item }}"
         state: directory
         owner: root
         group: root
         mode: '0755'
+      loop:
+        - "{{ vcf_config_dir }}"
+        - "{{ vcf_ui_dir }}"
 
-    - name: Create Traefik external network
+    - name: Write the nginx site configuration
+      ansible.builtin.copy:
+        content: "{{ vcf_nginx_config }}"
+        dest: "{{ vcf_config_dir }}/default.conf"
+        owner: root
+        group: root
+        mode: '0644'
+      notify: Restart VCF Offline Bundle Server
+
+    - name: Write the upload page
+      ansible.builtin.copy:
+        src: files/index.html
+        dest: "{{ vcf_ui_dir }}/index.html"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create the Traefik external network
       community.docker.docker_network:
-        name: traefik
+        name: "{{ vcf_network }}"
         driver: bridge
         state: present
 
-    - name: Create and start Nginx container with volume mapping
+    - name: Create and start the bundle server container
       community.docker.docker_container:
-        name: VCF_Offline_Bundle_Server
-        image: nginx:latest
+        name: "{{ vcf_container_name }}"
+        image: "{{ vcf_image }}"
         state: started
         restart_policy: always
         volumes:
-          - "/vcf:/usr/share/nginx/html:rw"  # Map host directory to container's document root
+          - "{{ vcf_host_root }}:{{ vcf_container_root }}:rw"
+          - "{{ vcf_config_dir }}/default.conf:/etc/nginx/conf.d/default.conf:ro"
+          - "{{ vcf_ui_dir }}:{{ vcf_container_ui }}:ro"
         networks:
-          - name: traefik
-        # Other optional configurations for Nginx container can be added here
-        labels:
-          # Add your custom Docker labels here
-          deployment.environment: "{{ ansible_host }}_nginx"
-          owner_team: it-support
-          project.name: my_project
-          description: "Nginx web server with content from host directory {{ inventory_hostname }}"
-          com.example.version: 1.0.0
-          com.example.description: VCF Offline Bundle Server
-          # Traefik labels
-          traefik.enable: "true"
-          # HTTPS router
-          traefik.http.routers.vcf.rule: "Host(`vcf.jameskilby.cloud`)"
-          traefik.http.routers.vcf.entrypoints: "websecure"
-          traefik.http.routers.vcf.tls: "true"
-          traefik.http.routers.vcf.tls.certresolver: "cloudflare"
-          # HTTP router with redirect
-          traefik.http.routers.vcf-http.rule: "Host(`vcf.jameskilby.cloud`)"
-          traefik.http.routers.vcf-http.entrypoints: "web"
-          traefik.http.routers.vcf-http.middlewares: "redirect-to-https"
-          # Redirect middleware
-          traefik.http.middlewares.redirect-to-https.redirectscheme.scheme: "https"
-          # Service configuration
-          traefik.http.services.vcf.loadbalancer.server.port: "80"
+          - name: "{{ vcf_network }}"
+        labels: "{{ vcf_base_labels | combine(vcf_auth_labels if vcf_upload_auth else {}) }}"
 
+    - name: Report how to reach the server
+      ansible.builtin.debug:
+        msg:
+          - "Upload page: https://{{ vcf_domain }}/"
+          - "Bundle URLs: https://{{ vcf_domain }}/<filename> (anonymous, for SDDC Manager)"
+          - >-
+            Uploads: {{ 'basic auth as ' ~ vcf_upload_username
+                        if vcf_upload_auth else 'OPEN - anyone who can reach this host can write to '
+                        ~ vcf_host_root }}

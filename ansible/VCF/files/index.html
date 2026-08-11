@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>VCF Offline Bundle Server</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%2314181d'/%3E%3Cpath d='M4 6.5h8M4 9.5h5' stroke='%23fff' stroke-width='1.5'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+    --paper:     #eff0f1;
+    --panel:     #ffffff;
+    --ink:       #14181d;
+    --ink-2:     #5a646f;
+    --ink-3:     #8a939c;
+    --rule:      #d2d5d9;
+    --track:     #e2e4e7;
+    --verdigris: #0e7c6b;
+    --rust:      #b4341c;
+    --focus:     #14181d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:     #0f1215;
+      --panel:     #171b1f;
+      --ink:       #e7e9eb;
+      --ink-2:     #98a1aa;
+      --ink-3:     #6e7880;
+      --rule:      #282f36;
+      --track:     #22282e;
+      --verdigris: #2fb39c;
+      --rust:      #e06249;
+      --focus:     #e7e9eb;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px 80px; }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: baseline; justify-content: space-between;
+    padding: 26px 0 18px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .wordmark {
+    font-family: var(--mono);
+    font-size: clamp(19px, 3.4vw, 26px);
+    font-weight: 700;
+    letter-spacing: -0.045em;
+    margin: 0;
+  }
+  .wordmark span { color: var(--ink-3); font-weight: 400; }
+  .masthead-side { display: flex; align-items: center; gap: 14px; font-family: var(--mono); font-size: 12px; }
+  .host { color: var(--ink-2); }
+  .status { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+  .status::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ink-3);
+  }
+  .status[data-state="up"]::before { background: var(--verdigris); }
+  .status[data-state="down"]::before { background: var(--rust); }
+
+  /* ---------- buttons ---------- */
+  button {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink);
+    background: transparent; border: 1px solid var(--rule);
+    border-radius: 2px; padding: 6px 10px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--ink); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.solid { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  button.plain { border-color: transparent; padding: 4px 6px; color: var(--ink-2); }
+  button.plain:hover { color: var(--ink); border-color: var(--rule); }
+  button.danger:hover { color: var(--rust); border-color: var(--rust); }
+
+  /* ---------- drop plane (the hero) ---------- */
+  .plane {
+    display: block; position: relative;
+    margin: 28px 0 0; padding: clamp(38px, 9vw, 76px) 24px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    text-align: center; cursor: pointer;
+  }
+  .plane::after {
+    content: ""; position: absolute; inset: 9px;
+    border: 1px dashed var(--rule); border-radius: 2px;
+    pointer-events: none;
+  }
+  .plane:hover::after, .plane:focus-within::after { border-color: var(--ink-3); }
+  .plane h2 {
+    font-family: var(--mono);
+    font-size: clamp(20px, 4.6vw, 34px);
+    font-weight: 700; letter-spacing: -0.04em;
+    margin: 0 0 8px;
+  }
+  .plane p { margin: 0; color: var(--ink-2); font-size: 13px; }
+  .plane u { text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .plane input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+  body.dragging .plane { background: var(--ink); border-color: var(--ink); }
+  body.dragging .plane h2 { color: var(--paper); }
+  body.dragging .plane p { color: var(--ink-3); }
+  body.dragging .plane::after { border-color: var(--ink-3); border-style: solid; }
+
+  /* ---------- section headers ---------- */
+  .head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin: 40px 0 0; padding-bottom: 8px;
+    border-bottom: 1px solid var(--rule);
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .head span { color: var(--ink-3); letter-spacing: 0.06em; }
+  .head h2 { font: inherit; margin: 0; }
+
+  /* ---------- transfer rows ---------- */
+  .transfer { padding: 16px 0; border-bottom: 1px solid var(--rule); }
+  .transfer-top {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 10px;
+  }
+  .transfer-name {
+    font-family: var(--mono); font-size: 13px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto; min-width: 0;
+  }
+  .transfer-state {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-3); white-space: nowrap;
+  }
+  .transfer[data-state="done"] .transfer-state { color: var(--verdigris); }
+  .transfer[data-state="failed"] .transfer-state,
+  .transfer[data-state="cancelled"] .transfer-state { color: var(--rust); }
+
+  /* the byte ruler */
+  .meter {
+    position: relative; height: 34px; isolation: isolate;
+    background: var(--track); border-radius: 2px; overflow: hidden;
+  }
+  .meter-fill {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+    background: var(--ink);
+    transition: width 160ms linear;
+  }
+  .transfer[data-state="failed"] .meter-fill,
+  .transfer[data-state="cancelled"] .meter-fill { background: var(--rust); }
+  .meter-ticks {
+    position: absolute; inset: 0; mix-blend-mode: difference; pointer-events: none;
+    background-image:
+      linear-gradient(90deg, rgba(255,255,255,0.85) 0 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.4) 0 1px, transparent 1px);
+    background-size: 25% 55%, 6.25% 28%;
+    background-position: 0 100%, 0 100%;
+    background-repeat: repeat-x, repeat-x;
+  }
+  .meter-read {
+    position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; padding: 0 11px;
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.05em; color: #fff;
+    mix-blend-mode: difference; pointer-events: none;
+    white-space: nowrap; overflow: hidden;
+  }
+  .meter-read i { font-style: normal; opacity: 0.8; }
+  @media (prefers-reduced-motion: reduce) {
+    .meter-fill { transition: none; }
+  }
+
+  /* ---------- depot listing ---------- */
+  .crumbs {
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font-family: var(--mono); font-size: 12px; padding: 14px 0 2px;
+  }
+  .crumbs button { border: 0; padding: 0; text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--ink-2); }
+  .crumbs button:hover { color: var(--ink); text-decoration: underline; }
+  .crumbs em { font-style: normal; color: var(--ink-3); }
+
+  .row {
+    display: grid; grid-template-columns: 1fr auto auto auto;
+    align-items: center; gap: 16px;
+    padding: 11px 0; border-bottom: 1px solid var(--rule);
+  }
+  .row a.name {
+    font-family: var(--mono); font-size: 13px; color: var(--ink);
+    text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .row a.name:hover { text-decoration: underline; }
+  .row .dir { font-family: var(--mono); font-size: 13px; }
+  .row .dir::before { content: "› "; color: var(--ink-3); }
+  .row .size, .row .when {
+    font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+    font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .row .when { min-width: 108px; }
+  .row .acts { display: flex; gap: 4px; }
+
+  .empty {
+    padding: 34px 0 8px; color: var(--ink-2); font-size: 14px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .empty b { display: block; font-family: var(--mono); font-weight: 700; color: var(--ink); margin-bottom: 4px; letter-spacing: -0.02em; }
+
+  .note {
+    margin-top: 22px; font-family: var(--mono); font-size: 11px;
+    color: var(--ink-3); letter-spacing: 0.03em; line-height: 1.8;
+  }
+  .note code { color: var(--ink-2); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper);
+    font-family: var(--mono); font-size: 12px;
+    padding: 9px 14px; border-radius: 2px; z-index: 20;
+    max-width: min(90vw, 560px);
+  }
+  .toast[hidden] { display: none; }
+
+  /* ---------- sign in ---------- */
+  dialog {
+    border: 1px solid var(--rule); border-radius: 3px;
+    background: var(--panel); color: var(--ink);
+    padding: 24px; width: min(92vw, 360px);
+  }
+  dialog::backdrop { background: rgba(10,12,14,0.5); }
+  dialog h2 { font-family: var(--mono); font-size: 15px; letter-spacing: -0.02em; margin: 0 0 4px; }
+  dialog p { margin: 0 0 18px; font-size: 13px; color: var(--ink-2); }
+  label.field { display: block; margin-bottom: 12px; }
+  label.field span {
+    display: block; font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 5px;
+  }
+  label.field input {
+    width: 100%; font-family: var(--mono); font-size: 13px;
+    padding: 8px 10px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 2px;
+  }
+  .dialog-msg { color: var(--rust); font-family: var(--mono); font-size: 11px; min-height: 16px; margin: 0 0 10px; }
+  .dialog-acts { display: flex; gap: 8px; justify-content: flex-end; }
+
+  @media (max-width: 620px) {
+    .row { grid-template-columns: 1fr auto; gap: 6px 12px; }
+    .row .when { display: none; }
+    .row .acts { grid-column: 2; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1 class="wordmark">VCF <span>offline bundle server</span></h1>
+    <div class="masthead-side">
+      <span class="host" id="host"></span>
+      <span class="status" id="status" data-state="">checking</span>
+      <button id="authBtn" class="plain">Sign in</button>
+    </div>
+  </header>
+
+  <label class="plane" id="plane">
+    <h2 id="planeTitle">Drag bundles here</h2>
+    <p id="planeHint">or <u>choose files</u> — they land in <code id="planeDest">/vcf/</code></p>
+    <input type="file" id="picker" multiple>
+  </label>
+
+  <section id="transfersSection" hidden>
+    <div class="head">
+      <h2>In flight</h2>
+      <span id="transfersMeta"></span>
+    </div>
+    <div id="transfers"></div>
+  </section>
+
+  <section>
+    <div class="head">
+      <h2>On the server</h2>
+      <span id="listMeta"></span>
+    </div>
+    <div class="crumbs" id="crumbs"></div>
+    <div id="listing"></div>
+  </section>
+
+  <p class="note" id="note"></p>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<dialog id="authDialog">
+  <form method="dialog" id="authForm">
+    <h2>Sign in to upload</h2>
+    <p>Uploads and deletes need the bundle server credentials. Browsing and downloads stay open.</p>
+    <label class="field"><span>Username</span><input type="text" id="authUser" autocomplete="username" required></label>
+    <label class="field"><span>Password</span><input type="password" id="authPass" autocomplete="current-password" required></label>
+    <p class="dialog-msg" id="authMsg"></p>
+    <div class="dialog-acts">
+      <button type="button" id="authCancel" class="plain">Cancel</button>
+      <button type="submit" class="solid" id="authSubmit">Sign in</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(function () {
+  "use strict";
+
+  var LIST = "/api/files/";
+  var WRITE = "/api/upload/";
+  var STORE = "vcf.auth";
+
+  var cwd = "";               // "" or "patches/"
+  var queue = [];             // transfer records
+  var busy = false;
+  var auth = sessionStorage.getItem(STORE) || "";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* ---------- formatting ---------- */
+  function bytes(n) {
+    if (n === null || n === undefined) { return "—"; }
+    var u = ["B", "KB", "MB", "GB", "TB"], i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? n : n.toFixed(n < 10 ? 2 : 1)) + " " + u[i];
+  }
+  function rate(bps) { return bps > 0 ? bytes(bps) + "/s" : "—"; }
+  function eta(sec) {
+    if (!isFinite(sec) || sec <= 0) { return ""; }
+    if (sec < 60) { return Math.round(sec) + "s left"; }
+    if (sec < 3600) { return Math.round(sec / 60) + "m left"; }
+    return (sec / 3600).toFixed(1) + "h left";
+  }
+  function when(str) {
+    var d = new Date(str);
+    if (isNaN(d)) { return "—"; }
+    return d.toISOString().slice(0, 16).replace("T", " ");
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  var toastTimer;
+  function toast(msg) {
+    var el = $("toast");
+    el.textContent = msg;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.hidden = true; }, 5000);
+  }
+
+  /* ---------- auth ---------- */
+  function signedIn() { return auth !== ""; }
+  function authUserName() {
+    try { return atob(auth).split(":")[0]; } catch (e) { return "signed in"; }
+  }
+  function paintAuth() {
+    $("authBtn").textContent = signedIn() ? "Sign out — " + authUserName() : "Sign in";
+  }
+  function requireAuth(next) {
+    if (signedIn()) { next(); return; }
+    pendingAfterAuth = next;
+    $("authMsg").textContent = "";
+    $("authDialog").showModal();
+    $("authUser").focus();
+  }
+  var pendingAfterAuth = null;
+
+  $("authBtn").addEventListener("click", function () {
+    if (signedIn()) {
+      auth = "";
+      sessionStorage.removeItem(STORE);
+      paintAuth();
+      toast("Signed out. Uploads are disabled until you sign in again.");
+    } else {
+      requireAuth(function () {});
+    }
+  });
+  $("authCancel").addEventListener("click", function () {
+    pendingAfterAuth = null;
+    $("authDialog").close();
+  });
+  $("authForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var candidate = btoa($("authUser").value + ":" + $("authPass").value);
+    $("authSubmit").disabled = true;
+    $("authMsg").textContent = "";
+    // A DELETE of a dotfile path is always blocked by the server, so this only
+    // ever tests the credentials: 401 means rejected, anything else means accepted.
+    var xhr = new XMLHttpRequest();
+    xhr.open("DELETE", WRITE + ".auth-check");
+    xhr.setRequestHeader("Authorization", "Basic " + candidate);
+    xhr.onloadend = function () {
+      $("authSubmit").disabled = false;
+      if (xhr.status === 401) {
+        $("authMsg").textContent = "Those credentials were rejected.";
+        return;
+      }
+      if (xhr.status === 0) {
+        $("authMsg").textContent = "Could not reach the server.";
+        return;
+      }
+      auth = candidate;
+      sessionStorage.setItem(STORE, auth);
+      $("authPass").value = "";
+      paintAuth();
+      $("authDialog").close();
+      var next = pendingAfterAuth;
+      pendingAfterAuth = null;
+      if (next) { next(); }
+    };
+    xhr.send();
+  });
+
+  /* ---------- listing ---------- */
+  function crumbs() {
+    var el = $("crumbs");
+    var parts = cwd ? cwd.replace(/\/$/, "").split("/") : [];
+    var html = '<button data-path="">/vcf</button>';
+    var acc = "";
+    parts.forEach(function (p, i) {
+      acc += p + "/";
+      html += ' <em>/</em> ' + (i === parts.length - 1
+        ? "<em>" + esc(p) + "</em>"
+        : '<button data-path="' + esc(acc) + '">' + esc(p) + "</button>");
+    });
+    el.innerHTML = html;
+    Array.prototype.forEach.call(el.querySelectorAll("button"), function (b) {
+      b.addEventListener("click", function () { go(b.getAttribute("data-path")); });
+    });
+    $("planeDest").textContent = "/vcf/" + cwd;
+  }
+
+  function go(path) {
+    cwd = path;
+    crumbs();
+    load();
+  }
+
+  function load() {
+    fetch(LIST + cwd, { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) { throw new Error("HTTP " + r.status); }
+        return r.json();
+      })
+      .then(function (items) {
+        $("status").dataset.state = "up";
+        $("status").textContent = "online";
+        render(items);
+      })
+      .catch(function (err) {
+        $("status").dataset.state = "down";
+        $("status").textContent = "unreachable";
+        $("listing").innerHTML = '<div class="empty"><b>Cannot read the server</b>' +
+          esc(err.message) + " — check the container and Traefik route.</div>";
+        $("listMeta").textContent = "";
+      });
+  }
+
+  function render(items) {
+    items = items.filter(function (i) { return i.name.charAt(0) !== "."; });
+    var dirs = items.filter(function (i) { return i.type === "directory"; });
+    var files = items.filter(function (i) { return i.type !== "directory"; });
+    var cmp = function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true }); };
+    dirs.sort(cmp);
+    files.sort(cmp);
+
+    var total = files.reduce(function (s, f) { return s + (f.size || 0); }, 0);
+    $("listMeta").textContent = files.length
+      ? files.length + (files.length === 1 ? " file" : " files") + " · " + bytes(total)
+      : "";
+
+    var box = $("listing");
+    box.innerHTML = "";
+
+    if (!dirs.length && !files.length) {
+      box.innerHTML = '<div class="empty"><b>Nothing here yet</b>' +
+        "Drag a bundle onto the panel above and it will appear in this list.</div>";
+      return;
+    }
+
+    dirs.forEach(function (d) {
+      var row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = '<span class="dir"></span><span class="size">dir</span>' +
+        '<span class="when">' + esc(when(d.mtime)) + '</span><span class="acts"></span>';
+      var link = document.createElement("button");
+      link.className = "plain";
+      link.style.textTransform = "none";
+      link.style.letterSpacing = "0";
+      link.textContent = d.name;
+      link.addEventListener("click", function () { go(cwd + d.name + "/"); });
+      row.querySelector(".dir").appendChild(link);
+      box.appendChild(row);
+    });
+
+    files.forEach(function (f) {
+      var url = location.origin + "/" + cwd + encodeURIComponent(f.name);
+      var row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML =
+        '<a class="name" href="' + esc(url) + '" download>' + esc(f.name) + "</a>" +
+        '<span class="size">' + bytes(f.size) + "</span>" +
+        '<span class="when">' + esc(when(f.mtime)) + "</span>" +
+        '<span class="acts"><button class="plain" data-act="copy">Copy URL</button>' +
+        '<button class="plain danger" data-act="del">Delete</button></span>';
+      row.querySelector('[data-act="copy"]').addEventListener("click", function () {
+        navigator.clipboard.writeText(url).then(
+          function () { toast("Copied: " + url); },
+          function () { toast("Copy failed. The URL is " + url); }
+        );
+      });
+      row.querySelector('[data-act="del"]').addEventListener("click", function () {
+        requireAuth(function () { remove(f.name); });
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function remove(name) {
+    if (!confirm("Delete " + name + " from /vcf/" + cwd + "?\n\nThis cannot be undone.")) { return; }
+    var xhr = new XMLHttpRequest();
+    xhr.open("DELETE", WRITE + cwd + encodeURIComponent(name));
+    xhr.setRequestHeader("Authorization", "Basic " + auth);
+    xhr.onloadend = function () {
+      if (xhr.status === 204 || xhr.status === 200) {
+        toast("Deleted " + name);
+      } else if (xhr.status === 401) {
+        auth = ""; sessionStorage.removeItem(STORE); paintAuth();
+        toast("Credentials rejected. Sign in again.");
+      } else {
+        toast("Delete failed — HTTP " + xhr.status);
+      }
+      load();
+    };
+    xhr.send();
+  }
+
+  /* ---------- transfers ---------- */
+  function addFiles(files) {
+    var known = {};
+    $("listing").querySelectorAll("a.name").forEach(function (a) { known[a.textContent] = true; });
+
+    var accepted = [];
+    Array.prototype.forEach.call(files, function (file) {
+      if (known[file.name] &&
+          !confirm(file.name + " already exists in /vcf/" + cwd + ".\n\nReplace it?")) {
+        return;
+      }
+      accepted.push(file);
+    });
+    if (!accepted.length) { return; }
+
+    requireAuth(function () {
+      accepted.forEach(function (file) {
+        var t = {
+          file: file, name: file.name, dest: cwd,
+          loaded: 0, total: file.size, state: "queued",
+          bps: 0, mark: 0, markAt: 0, xhr: null, el: null
+        };
+        queue.push(t);
+        drawTransfer(t);
+      });
+      paintTransfers();
+      pump();
+    });
+  }
+
+  function drawTransfer(t) {
+    var el = document.createElement("div");
+    el.className = "transfer";
+    el.dataset.state = t.state;
+    el.innerHTML =
+      '<div class="transfer-top">' +
+        '<span class="transfer-name"></span>' +
+        '<span class="transfer-state"></span>' +
+        '<button class="plain" data-act="stop">Cancel</button>' +
+      "</div>" +
+      '<div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">' +
+        '<div class="meter-fill"></div>' +
+        '<div class="meter-ticks"></div>' +
+        '<div class="meter-read"><i></i><b></b></div>' +
+      "</div>";
+    el.querySelector(".transfer-name").textContent = t.name;
+    el.querySelector('[data-act="stop"]').addEventListener("click", function () {
+      if (t.xhr) { t.xhr.abort(); } else { t.state = "cancelled"; paintTransfer(t); paintTransfers(); }
+    });
+    t.el = el;
+    $("transfers").insertBefore(el, $("transfers").firstChild);
+    paintTransfer(t);
+  }
+
+  function paintTransfer(t) {
+    var el = t.el;
+    if (!el) { return; }
+    var pct = t.total ? Math.min(100, (t.loaded / t.total) * 100) : 0;
+    el.dataset.state = t.state;
+    el.querySelector(".meter-fill").style.width = (t.state === "done" ? 100 : pct) + "%";
+    el.querySelector(".meter").setAttribute("aria-valuenow", Math.round(pct));
+
+    var left = bytes(t.loaded) + " / " + bytes(t.total);
+    var right = Math.round(pct) + "%";
+    if (t.state === "sending") {
+      var remain = t.bps > 0 ? (t.total - t.loaded) / t.bps : Infinity;
+      left += "  ·  " + rate(t.bps);
+      var e = eta(remain);
+      if (e) { left += "  ·  " + e; }
+    } else if (t.state === "done") {
+      left = bytes(t.total) + "  ·  on the server";
+      right = "100%";
+    }
+    el.querySelector(".meter-read i").textContent = left;
+    el.querySelector(".meter-read b").textContent = right;
+
+    var label = { queued: "queued", sending: "sending", done: "done",
+                  failed: "failed", cancelled: "cancelled" }[t.state];
+    el.querySelector(".transfer-state").textContent = label;
+    var stop = el.querySelector('[data-act="stop"]');
+    stop.hidden = (t.state === "done" || t.state === "failed" || t.state === "cancelled");
+  }
+
+  function paintTransfers() {
+    var active = queue.filter(function (t) { return t.state === "queued" || t.state === "sending"; });
+    $("transfersSection").hidden = queue.length === 0;
+    $("transfersMeta").textContent = active.length
+      ? active.length + " remaining"
+      : queue.length + (queue.length === 1 ? " transfer" : " transfers") + " finished";
+  }
+
+  function pump() {
+    if (busy) { return; }
+    var next = null;
+    for (var i = 0; i < queue.length; i++) {
+      if (queue[i].state === "queued") { next = queue[i]; break; }
+    }
+    if (!next) { busy = false; return; }
+    busy = true;
+    send(next);
+  }
+
+  function send(t) {
+    var xhr = new XMLHttpRequest();
+    t.xhr = xhr;
+    t.state = "sending";
+    t.mark = 0;
+    t.markAt = Date.now();
+    paintTransfer(t);
+    paintTransfers();
+
+    xhr.open("PUT", WRITE + t.dest + encodeURIComponent(t.name));
+    xhr.setRequestHeader("Authorization", "Basic " + auth);
+
+    xhr.upload.addEventListener("progress", function (e) {
+      t.loaded = e.loaded;
+      if (e.lengthComputable) { t.total = e.total; }
+      var now = Date.now();
+      var dt = (now - t.markAt) / 1000;
+      if (dt >= 0.7) {
+        var inst = (e.loaded - t.mark) / dt;
+        t.bps = t.bps ? t.bps * 0.6 + inst * 0.4 : inst;
+        t.mark = e.loaded;
+        t.markAt = now;
+      }
+      paintTransfer(t);
+    });
+
+    xhr.addEventListener("load", function () {
+      if (xhr.status === 201 || xhr.status === 204 || xhr.status === 200) {
+        t.state = "done";
+        t.loaded = t.total;
+      } else if (xhr.status === 401) {
+        t.state = "failed";
+        auth = ""; sessionStorage.removeItem(STORE); paintAuth();
+        toast("Credentials rejected. Sign in again, then re-drop " + t.name + ".");
+      } else if (xhr.status === 413) {
+        t.state = "failed";
+        toast("The proxy refused " + t.name + " (413). Request body limit is too small for this file.");
+      } else if (xhr.status === 507 || xhr.status === 500) {
+        t.state = "failed";
+        toast("Server could not write " + t.name + " (HTTP " + xhr.status + "). Check free space on /vcf.");
+      } else {
+        t.state = "failed";
+        toast("Upload failed — HTTP " + xhr.status + " on " + t.name);
+      }
+      finish(t);
+    });
+    xhr.addEventListener("error", function () {
+      t.state = "failed";
+      toast("Connection dropped while sending " + t.name + ".");
+      finish(t);
+    });
+    xhr.addEventListener("abort", function () {
+      t.state = "cancelled";
+      toast("Cancelled " + t.name + ". A partial file may be left behind.");
+      finish(t);
+    });
+
+    xhr.send(t.file);
+  }
+
+  function finish(t) {
+    t.xhr = null;
+    busy = false;
+    paintTransfer(t);
+    paintTransfers();
+    load();
+    pump();
+  }
+
+  /* ---------- input wiring ---------- */
+  $("picker").addEventListener("change", function (e) {
+    addFiles(e.target.files);
+    e.target.value = "";
+  });
+
+  var depth = 0;
+  function hasFiles(e) {
+    return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], "Files") !== -1;
+  }
+  window.addEventListener("dragenter", function (e) {
+    if (!hasFiles(e)) { return; }
+    e.preventDefault();
+    depth++;
+    document.body.classList.add("dragging");
+    $("planeTitle").textContent = "Release to upload";
+  });
+  window.addEventListener("dragover", function (e) {
+    if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }
+  });
+  window.addEventListener("dragleave", function () {
+    depth = Math.max(0, depth - 1);
+    if (depth === 0) { resetPlane(); }
+  });
+  window.addEventListener("drop", function (e) {
+    if (!hasFiles(e)) { return; }
+    e.preventDefault();
+    depth = 0;
+    resetPlane();
+
+    var items = e.dataTransfer.items;
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      for (var i = 0; i < items.length; i++) {
+        var entry = items[i].webkitGetAsEntry();
+        if (entry && entry.isDirectory) {
+          toast("Folders are not supported. Open " + entry.name + " and drop the files inside.");
+          return;
+        }
+      }
+    }
+    addFiles(e.dataTransfer.files);
+  });
+  function resetPlane() {
+    document.body.classList.remove("dragging");
+    $("planeTitle").textContent = "Drag bundles here";
+  }
+
+  window.addEventListener("beforeunload", function (e) {
+    var active = queue.some(function (t) { return t.state === "sending" || t.state === "queued"; });
+    if (active) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  /* ---------- boot ---------- */
+  $("host").textContent = location.host;
+  $("note").innerHTML =
+    "Bundles are served straight from <code>/vcf</code> — paste a copied URL into " +
+    "SDDC Manager under Lifecycle Management → Bundle Management → Offline Bundle Transfer.<br>" +
+    "Large transfers run one at a time; keep this tab open until they finish.";
+  paintAuth();
+  crumbs();
+  load();
+  setInterval(function () { if (!busy) { load(); } }, 60000);
+})();
+</script>
+</body>
+</html>
